@@ -21,6 +21,7 @@ from functools import wraps
 from textwrap import dedent
 from datetime import timedelta
 from collections import defaultdict
+from random import randint
 
 from discord.enums import ChannelType
 from discord.ext.commands.bot import _get_variable
@@ -49,7 +50,7 @@ log = logging.getLogger(__name__)
 class MusicBot(discord.Client):
     def __init__(self, config_file=None, perms_file=None):
         try:
-            sys.stdout.write("\x1b]2;MusicBot {}\x07".format(BOTVERSION))
+            sys.stdout.write("\x1b]2;DJ Roomba {}\x07".format(BOTVERSION))
         except:
             pass
 
@@ -77,7 +78,7 @@ class MusicBot(discord.Client):
 
         self._setup_logging()
 
-        log.info(' MusicBot (version {}) '.format(BOTVERSION).center(50, '='))
+        log.info(' DJ Roomba (version {}) '.format(BOTVERSION).center(50, '='))
 
         if not self.autoplaylist:
             log.warning("Autoplaylist is empty, disabling.")
@@ -123,7 +124,7 @@ class MusicBot(discord.Client):
                 # noinspection PyCallingNonCallable
                 return await func(self, *args, **kwargs)
             else:
-                raise exceptions.PermissionsError("only the owner can use this command", expire_in=30)
+                raise exceptions.PermissionsError("Only my owner can use this command.", expire_in=30)
 
         return wrapper
 
@@ -295,7 +296,7 @@ class MusicBot(discord.Client):
                     log.error("Failed to join {0.server.name}/{0.name}".format(channel))
 
             elif channel:
-                log.warning("Not joining {0.server.name}/{0.name}, that's a text channel.".format(channel))
+                log.warning("Not joining {0.server.name}/{0.name}, that's a text channel. I need a voice channel.".format(channel))
 
             else:
                 log.warning("Invalid channel thing: {}".format(channel))
@@ -317,7 +318,7 @@ class MusicBot(discord.Client):
             return True
         else:
             raise exceptions.PermissionsError(
-                "you cannot use this command when not in the voice channel (%s)" % vc.name, expire_in=30)
+                "Sorry, you cannot use this command when not in the voice channel (%s)" % vc.name, expire_in=30)
 
     async def _cache_app_info(self, *, update=False):
         if not self.cached_app_info and not update and self.user.bot:
@@ -600,6 +601,7 @@ class MusicBot(discord.Client):
 
         channel = entry.meta.get('channel', None)
         author = entry.meta.get('author', None)
+        thumbnail = entry.filename_thumbnail
 
         if channel and author:
             last_np_msg = self.server_specific_data[channel.server]['last_np_msg']
@@ -609,8 +611,8 @@ class MusicBot(discord.Client):
                     if lmsg != last_np_msg and last_np_msg:
                         await self.safe_delete_message(last_np_msg)
                         self.server_specific_data[channel.server]['last_np_msg'] = None
-                    break  # This is probably redundant
-
+                    break
+					
             if self.config.now_playing_mentions:
                 newmsg = '%s - your song **%s** is now playing in %s!' % (
                     entry.meta['author'].mention, entry.title, player.voice_client.channel.name)
@@ -619,7 +621,9 @@ class MusicBot(discord.Client):
                     player.voice_client.channel.name, entry.title)
 
             if self.server_specific_data[channel.server]['last_np_msg']:
-                self.server_specific_data[channel.server]['last_np_msg'] = await self.safe_edit_message(last_np_msg, newmsg, send_if_fail=True)
+                self.server_specific_data[channel.server]['last_np_msg'] = await self.safe_edit_message(last_np_msg, newmsg, send_if_fail=True, fp=thumbnail)
+            elif thumbnail and self.config.show_thumbnails:
+                self.server_specific_data[channel.server]['last_np_msg'] = await self.safe_send_file(channel, newmsg, thumbnail)
             else:
                 self.server_specific_data[channel.server]['last_np_msg'] = await self.safe_send_message(channel, newmsg)
 
@@ -635,10 +639,25 @@ class MusicBot(discord.Client):
     async def on_player_stop(self, player, **_):
         await self.update_now_playing_status()
 
-    async def on_player_finished_playing(self, player, **_):
+    async def on_player_finished_playing(self, player, entry, **_):
+	
+        channel = entry.meta.get('channel', None)
+        author = entry.meta.get('author', None)
+        thumbnail = entry.filename_thumbnail
+
+        if channel and author:
+            last_np_msg = self.server_specific_data[channel.server]['last_np_msg']
+            if last_np_msg and last_np_msg.channel == channel:
+
+                async for lmsg in self.logs_from(channel, limit=1):
+                    if lmsg != last_np_msg and last_np_msg:
+                        await self.safe_delete_message(last_np_msg)
+                        self.server_specific_data[channel.server]['last_np_msg'] = None
+                    break
+		
         if not player.playlist.entries and not player.current_entry and self.config.auto_playlist:
             if not self.autoplaylist_session:
-                log.info("Autoplaylist session empty. Re-populating with entries...")
+                log.info("Autoplaylist session empty. Re-populating with entries ...")
                 self.autoplaylist_session = self.autoplaylist[:]
 
             while self.autoplaylist_session:
@@ -670,7 +689,7 @@ class MusicBot(discord.Client):
                     continue
 
                 if info.get('entries', None):  # or .get('_type', '') == 'playlist'
-                    log.debug("Playlist found but is unsupported at this time, skipping.")
+                    log.debug("Playlist found but is unsupported at this time, skipping ...")
                     # TODO: Playlist expansion
 
                 # Do I check the initial conditions again?
@@ -687,7 +706,7 @@ class MusicBot(discord.Client):
 
             if not self.autoplaylist:
                 # TODO: When I add playlist expansion, make sure that's not happening during this check
-                log.warning("No playable songs in the autoplaylist, disabling.")
+                log.warning("No playable songs in the autoplaylist, disabling ...")
                 self.config.auto_playlist = False
 
         else: # Don't serialize for autoplaylist events
@@ -837,7 +856,7 @@ class MusicBot(discord.Client):
             if self._delete_old_audiocache():
                 log.debug("Deleted old audio cache")
             else:
-                log.debug("Could not delete old audio cache, moving on.")
+                log.debug("Could not delete old audio cache, moving on ...")
 
 
     async def _scheck_server_permissions(self):
@@ -875,7 +894,7 @@ class MusicBot(discord.Client):
                 msg = await self.send_message(dest, content, tts=tts)
 
         except discord.Forbidden:
-            lfunc("Cannot send message to \"%s\", no permission", dest.name)
+            lfunc("Cannot send message to \"%s\", no permission ...", dest.name)
 
         except discord.NotFound:
             lfunc("Cannot send message to \"%s\", invalid channel?", dest.name)
@@ -895,8 +914,29 @@ class MusicBot(discord.Client):
                 asyncio.ensure_future(self._wait_delete_msg(also_delete, expire_in))
 
         return msg
+		
+    async def safe_send_file(self, dest, content, fp, *, tts=False, expire_in=0, also_delete=None, quiet=False, filename=None):
+        msg = None
+        try:
+            msg = await self.send_file(dest, fp, content=content, tts=tts)
 
-    async def safe_delete_message(self, message, *, quiet=False):
+            if msg and expire_in:
+                asyncio.ensure_future(self._wait_delete_msg(msg, expire_in))
+
+            if also_delete and isinstance(also_delete, discord.Message):
+                asyncio.ensure_future(self._wait_delete_msg(also_delete, expire_in))
+
+        except discord.Forbidden:
+            if not quiet:
+                self.safe_print("Warning: Cannot send message or file to %s, no permission" % dest.name)
+
+        except discord.NotFound:
+            if not quiet:
+                self.safe_print("Warning: Cannot send message or file to %s, invalid channel?" % dest.name)
+
+        return msg
+
+    async def safe_delete_message(self, message, *, quiet=True): #This is set to quiet until I find a non-redundant way to delete 'now playing' message under both on_player_play and on_player_finished_playing - preventing log warning spam
         lfunc = log.debug if quiet else log.warning
 
         try:
@@ -908,7 +948,7 @@ class MusicBot(discord.Client):
         except discord.NotFound:
             lfunc("Cannot delete message \"{}\", message not found".format(message.clean_content))
 
-    async def safe_edit_message(self, message, new, *, send_if_fail=False, quiet=False):
+    async def safe_edit_message(self, message, new, *, fp=None, send_if_fail=False, quiet=False):
         lfunc = log.debug if quiet else log.warning
 
         try:
@@ -918,6 +958,9 @@ class MusicBot(discord.Client):
             lfunc("Cannot edit message \"{}\", message not found".format(message.clean_content))
             if send_if_fail:
                 lfunc("Sending message instead")
+            if fp and self.config.show_thumbnails:
+                return await self.safe_send_file(message.channel, new, fp)
+            else:
                 return await self.safe_send_message(message.channel, new)
 
     async def send_typing(self, destination):
@@ -1148,9 +1191,8 @@ class MusicBot(discord.Client):
         Usage:
             {command_prefix}help [command]
 
-        Prints a help message.
-        If a command is specified, it prints a help message for that command.
-        Otherwise, it lists the available commands.
+        Prints a list of commands and useful information about DJ Roomba.
+        If a command is specified ({command_prefix]help [command]), then the bot returns information about that command.
         """
 
         if command:
@@ -1166,7 +1208,7 @@ class MusicBot(discord.Client):
                 return Response("No such command", delete_after=10)
 
         else:
-            helpmsg = "**Available commands**\n```"
+            helpmsg = "**here are the available commands:**\n```"
             commands = []
 
             for att in dir(self):
@@ -1175,10 +1217,17 @@ class MusicBot(discord.Client):
                     commands.append("{}{}".format(self.config.command_prefix, command_name))
 
             helpmsg += ", ".join(commands)
-            helpmsg += "```\n<https://github.com/SexualRhinoceros/MusicBot/wiki/Commands-list>"
-            helpmsg += "You can also use `{}help x` for more info about each command.".format(self.config.command_prefix)
+            helpmsg += "```\nYou can also use `{}help x` for more info about each command.".format(self.config.command_prefix)
+            helpmsg += "\nFor more bot information type `{}botinfo`.".format(self.config.command_prefix) 
+
+            #helpmsg += ", ".join(commands)
+            #helpmsg += "```\n<https://github.com/SexualRhinoceros/MusicBot/wiki/Commands-list>"
+            #helpmsg += "You can also use `{}help x` for more info about each command.".format(self.config.command_prefix)
 
             return Response(helpmsg, reply=True, delete_after=60)
+
+    async def cmd_botinfo(self, message):
+        return Response("DJ Roomba is a fork of the Just-Some-Bots/MusicBot GitHub repository with many added features and more personality. MusicBot version `1.9.6_3`. DJ Roomba version `1.13b`.", delete_after=60)
 
     async def cmd_blacklist(self, message, user_mentions, option, something):
         """
@@ -1199,7 +1248,7 @@ class MusicBot(discord.Client):
 
         for user in user_mentions.copy():
             if user.id == self.config.owner_id:
-                print("[Commands:Blacklist] The owner cannot be blacklisted.")
+                print("[Commands:Blacklist] Nice try ... but my owner cannot be blacklisted.")
                 user_mentions.remove(user)
 
         old_len = len(self.blacklist)
@@ -1210,20 +1259,20 @@ class MusicBot(discord.Client):
             write_file(self.config.blacklist_file, self.blacklist)
 
             return Response(
-                '%s users have been added to the blacklist' % (len(self.blacklist) - old_len),
+                '%s users have been added to the blacklist.' % (len(self.blacklist) - old_len),
                 reply=True, delete_after=10
             )
 
         else:
             if self.blacklist.isdisjoint(user.id for user in user_mentions):
-                return Response('none of those users are in the blacklist.', reply=True, delete_after=10)
+                return Response('None of those users are in the blacklist.', reply=True, delete_after=10)
 
             else:
                 self.blacklist.difference_update(user.id for user in user_mentions)
                 write_file(self.config.blacklist_file, self.blacklist)
 
                 return Response(
-                    '%s users have been removed from the blacklist' % (old_len - len(self.blacklist)),
+                    '%s users have been removed from the blacklist.' % (old_len - len(self.blacklist)),
                     reply=True, delete_after=10
                 )
 
@@ -1235,30 +1284,30 @@ class MusicBot(discord.Client):
         Tells the user their id or the id of another user.
         """
         if not user_mentions:
-            return Response('your id is `%s`' % author.id, reply=True, delete_after=35)
+            return Response('your id is `%s`' % author.id, reply=True, delete_after=15)
         else:
             usr = user_mentions[0]
-            return Response("%s's id is `%s`" % (usr.name, usr.id), reply=True, delete_after=35)
+            return Response("%s's id is `%s`" % (usr.name, usr.id), reply=True, delete_after=15)
     
-    async def cmd_save(self, player):
-        """
-        Usage:
-            {command_prefix}save
-        
-        Saves the current song to the autoplaylist.
-        """
-        if player.current_entry and not isinstance(player.current_entry, StreamPlaylistEntry):
-            url = player.current_entry.url
-
-            if url not in self.autoplaylist:
-                self.autoplaylist.append(url)
-                write_file(self.config.auto_playlist_file, self.autoplaylist)
-                log.debug("Appended {} to autoplaylist".format(url))
-                return Response('\N{THUMBS UP SIGN}')
-            else:
-                raise exceptions.CommandError('This song is already in the autoplaylist.')
-        else:
-            raise exceptions.CommandError('There is no valid song playing.')
+#    async def cmd_save(self, player):
+#        """
+#        Usage:
+#            {command_prefix}save
+#        
+#        Saves the current song to the autoplaylist.
+#        """
+#        if player.current_entry and not isinstance(player.current_entry, StreamPlaylistEntry):
+#            url = player.current_entry.url
+#
+#            if url not in self.autoplaylist:
+#                self.autoplaylist.append(url)
+#                write_file(self.config.auto_playlist_file, self.autoplaylist)
+#                log.debug("Appended {} to autoplaylist".format(url))
+#                return Response('The song has been saved to the autoplaylist. \N{THUMBS UP SIGN}')
+#            else:
+#                raise exceptions.CommandError('This song is already in the autoplaylist.')
+#        else:
+#            raise exceptions.CommandError('There needs to be a song playing for me to add it to the autoplaylist.')
             
 
     @owner_only
@@ -1311,7 +1360,7 @@ class MusicBot(discord.Client):
         async with self.aiolocks[_func_() + ':' + author.id]:
             if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
                 raise exceptions.PermissionsError(
-                    "You have reached your enqueued song limit (%s)" % permissions.max_songs, expire_in=30
+                    "Sorry, you have reached your enqueued song limit (%s)" % permissions.max_songs, expire_in=30
                 )
 
             try:
@@ -1321,7 +1370,7 @@ class MusicBot(discord.Client):
 
             if not info:
                 raise exceptions.CommandError(
-                    "That video cannot be played.  Try using the {}stream command.".format(self.config.command_prefix),
+                    "Sorry, that video cannot be played. Try using the {}stream command.".format(self.config.command_prefix),
                     expire_in=30
                 )
 
@@ -1341,8 +1390,8 @@ class MusicBot(discord.Client):
 
                 if not info:
                     raise exceptions.CommandError(
-                        "Error extracting info from search string, youtubedl returned no data.  "
-                        "You may need to restart the bot if this continues to happen.", expire_in=30
+                        "Error extracting info from search string, youtubedl returned no data."
+                        "You may need to restart me if this continues to happen.", expire_in=30
                     )
 
                 if not all(info.get('entries', [])):
@@ -1362,7 +1411,7 @@ class MusicBot(discord.Client):
             if 'entries' in info:
                 # I have to do exe extra checks anyways because you can request an arbitrary number of search results
                 if not permissions.allow_playlists and ':search' in info['extractor'] and len(info['entries']) > 1:
-                    raise exceptions.PermissionsError("You are not allowed to request playlists", expire_in=30)
+                    raise exceptions.PermissionsError("Sorry, but you need to be in an appropriate role to have permission to request playlists.", expire_in=30)
 
                 # The only reason we would use this over `len(info['entries'])` is if we add `if _` to this one
                 num_songs = sum(1 for _ in info['entries'])
@@ -1376,7 +1425,7 @@ class MusicBot(discord.Client):
                 # This is a little bit weird when it says (x + 0 > y), I might add the other check back in
                 if permissions.max_songs and player.playlist.count_for_user(author) + num_songs > permissions.max_songs:
                     raise exceptions.PermissionsError(
-                        "Playlist entries + your already queued songs reached limit (%s + %s > %s)" % (
+                        "Playlist entries and queue amount too high for your role (%s + %s > %s)" % (
                             num_songs, player.playlist.count_for_user(author), permissions.max_songs),
                         expire_in=30
                     )
@@ -1443,7 +1492,7 @@ class MusicBot(discord.Client):
 
                 if not listlen - drop_count:
                     raise exceptions.CommandError(
-                        "No songs were added, all songs were over max duration (%ss)" % permissions.max_song_length,
+                        "No songs were added because all songs were over the max duration (%ss)" % permissions.max_song_length,
                         expire_in=30
                     )
 
@@ -1462,10 +1511,10 @@ class MusicBot(discord.Client):
 
                 except exceptions.WrongEntryTypeError as e:
                     if e.use_url == song_url:
-                        log.warning("Determined incorrect entry type, but suggested url is the same.  Help.")
+                        log.warning("Determined incorrect entry type, but the suggested url is the same. I'm confused. Help?")
 
-                    log.debug("Assumed url \"%s\" was a single entry, was actually a playlist" % song_url)
-                    log.debug("Using \"%s\" instead" % e.use_url)
+                    log.debug("Assumed url \"%s\" was a single entry, but it is actually a playlist." % song_url)
+                    log.debug("Using \"%s\" instead." % e.use_url)
 
                     return await self.cmd_play(player, channel, author, permissions, leftover_args, e.use_url)
 
@@ -1497,13 +1546,13 @@ class MusicBot(discord.Client):
         info = await self.downloader.extract_info(player.playlist.loop, playlist_url, download=False, process=False)
 
         if not info:
-            raise exceptions.CommandError("That playlist cannot be played.")
+            raise exceptions.CommandError("Sorry, but that playlist cannot be played.")
 
         num_songs = sum(1 for _ in info['entries'])
         t0 = time.time()
 
         busymsg = await self.safe_send_message(
-            channel, "Processing %s songs..." % num_songs)  # TODO: From playlist_title
+            channel, "Processing %s songs - this can take a while for large playlists. Please wait before shuffling, otherwise your playlist will not be completely shuffled." % num_songs)  # TODO: From playlist_title
         await self.send_typing(channel)
 
         entries_added = 0
@@ -1515,8 +1564,8 @@ class MusicBot(discord.Client):
                 # TODO: Add permissions
 
             except Exception:
-                log.error("Error processing playlist", exc_info=True)
-                raise exceptions.CommandError('Error handling playlist %s queuing.' % playlist_url, expire_in=30)
+                log.error("Error processing playlist ...", exc_info=True)
+                raise exceptions.CommandError('Error handling playlist %s queuing ...' % playlist_url, expire_in=30)
 
         elif extractor_type.lower() in ['soundcloud:set', 'bandcamp:album']:
             try:
@@ -1526,8 +1575,8 @@ class MusicBot(discord.Client):
                 # TODO: Add permissions
 
             except Exception:
-                log.error("Error processing playlist", exc_info=True)
-                raise exceptions.CommandError('Error handling playlist %s queuing.' % playlist_url, expire_in=30)
+                log.error("Error processing playlist ...", exc_info=True)
+                raise exceptions.CommandError('Error handling playlist %s queuing ...' % playlist_url, expire_in=30)
 
 
         songs_processed = len(entries_added)
@@ -1545,7 +1594,7 @@ class MusicBot(discord.Client):
                         pass
 
             if drop_count:
-                log.debug("Dropped %s songs" % drop_count)
+                log.debug("Dropped %s songs." % drop_count)
 
             if player.current_entry and player.current_entry.duration > permissions.max_song_length:
                 await self.safe_delete_message(self.server_specific_data[channel.server]['last_np_msg'])
@@ -1563,7 +1612,7 @@ class MusicBot(discord.Client):
         # TODO: actually calculate wait per song in the process function and return that too
 
         # This is technically inaccurate since bad songs are ignored but still take up time
-        log.info("Processed {}/{} songs in {} seconds at {:.2f}s/song, {:+.2g}/song from expected ({}s)".format(
+        log.info("Processed {}/{} songs in {} seconds at {:.2f}s/song, {:+.2g}/song from expected ({}s).".format(
             songs_processed,
             num_songs,
             fixg(ttime),
@@ -1573,13 +1622,13 @@ class MusicBot(discord.Client):
         )
 
         if not songs_added:
-            basetext = "No songs were added, all songs were over max duration (%ss)" % permissions.max_song_length
+            basetext = "No songs were added because all songs were over max duration (%ss)." % permissions.max_song_length
             if skipped:
                 basetext += "\nAdditionally, the current song was skipped for being too long."
 
             raise exceptions.CommandError(basetext, expire_in=30)
 
-        return Response("Enqueued {} songs to be played in {} seconds".format(
+        return Response("{} songs have been queued in {} seconds. Shuffle the queue by using the shuffle command.".format(
             songs_added, fixg(ttime, 1)), delete_after=30)
 
     async def cmd_stream(self, player, channel, author, permissions, song_url):
@@ -1597,13 +1646,13 @@ class MusicBot(discord.Client):
 
         if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
             raise exceptions.PermissionsError(
-                "You have reached your enqueued song limit (%s)" % permissions.max_songs, expire_in=30
+                "You have reached your enqueued song limit (%s)." % permissions.max_songs, expire_in=30
             )
 
         await self.send_typing(channel)
         await player.playlist.add_stream_entry(song_url, channel=channel, author=author)
 
-        return Response(":+1:", delete_after=6)
+        return Response("Got it! Your stream has been added to the queue. To end the stream use the skip command.", delete_after=30)
 
     async def cmd_search(self, player, channel, author, permissions, leftover_args):
         """
@@ -1616,7 +1665,7 @@ class MusicBot(discord.Client):
             - soundcloud (sc)
             - yahoo (yh)
         - number: return a number of video results and waits for user to choose one
-          - defaults to 3 if unspecified
+          - defaults to 5 if unspecified
           - note: If your search query starts with a number,
                   you must put your query in quotes
             - ex: {command_prefix}search 2 "I ran seagulls"
@@ -1625,7 +1674,7 @@ class MusicBot(discord.Client):
 
         if permissions.max_songs and player.playlist.count_for_user(author) > permissions.max_songs:
             raise exceptions.PermissionsError(
-                "You have reached your playlist item limit (%s)" % permissions.max_songs,
+                "You have reached your playlist item limit (%s)." % permissions.max_songs,
                 expire_in=30
             )
 
@@ -1646,7 +1695,7 @@ class MusicBot(discord.Client):
             raise exceptions.CommandError("Please quote your search query properly.", expire_in=30)
 
         service = 'youtube'
-        items_requested = 3
+        items_requested = 5
         max_items = 10  # this can be whatever, but since ytdl uses about 1000, a small number might be better
         services = {
             'youtube': 'ytsearch',
@@ -1680,7 +1729,7 @@ class MusicBot(discord.Client):
 
         search_query = '%s%s:%s' % (services[service], items_requested, ' '.join(leftover_args))
 
-        search_msg = await self.send_message(channel, "Searching for videos...")
+        search_msg = await self.send_message(channel, "Searching for videos ... make your choice by choosing a reaction under the search result.")
         await self.send_typing(channel)
 
         try:
@@ -1711,7 +1760,7 @@ class MusicBot(discord.Client):
             if res.reaction.emoji == '\u2705': # check
                 await self.safe_delete_message(result_message)
                 await self.cmd_play(player, channel, author, permissions, [], e['webpage_url'])
-                return Response("Alright, coming right up!", delete_after=30)
+                return Response("Excellent. Your song has been added to the queue.", delete_after=30)
             elif res.reaction.emoji == '\U0001F6AB': # cross
                 await self.safe_delete_message(result_message)
                 continue
@@ -1719,7 +1768,7 @@ class MusicBot(discord.Client):
                 await self.safe_delete_message(result_message)
                 break
 
-        return Response("Oh well \N{SLIGHTLY FROWNING FACE}", delete_after=30)
+        return Response("If I didn't find what you were looking for try again using a slightly different search query.", delete_after=30)
 
     async def cmd_np(self, player, channel, server, message):
         """
@@ -1737,6 +1786,7 @@ class MusicBot(discord.Client):
             # TODO: Fix timedelta garbage with util function
             song_progress = ftimedelta(timedelta(seconds=player.progress))
             song_total = ftimedelta(timedelta(seconds=player.current_entry.duration))
+            thumbnail = player.current_entry.filename_thumbnail
 
             streaming = isinstance(player.current_entry, StreamPlaylistEntry)
             prog_str = ('`[{progress}]`' if streaming else '`[{progress}/{total}]`').format(
@@ -1759,14 +1809,342 @@ class MusicBot(discord.Client):
                     progress=prog_str,
                     url=player.current_entry.url
                 )
-
-            self.server_specific_data[server]['last_np_msg'] = await self.safe_send_message(channel, np_text)
+				
+            if thumbnail and self.config.show_thumbnails:
+                self.server_specific_data[server]['last_np_msg'] = await self.safe_send_file(channel, np_text, thumbnail)
+            else:
+                self.server_specific_data[server]['last_np_msg'] = await self.safe_send_message(channel, np_text)
             await self._manual_delete_check(message)
         else:
             return Response(
-                'There are no songs queued! Queue something with {}play.'.format(self.config.command_prefix),
+                'There are no songs queued. Please queue something with {}play.'.format(self.config.command_prefix),
                 delete_after=30
             )
+			
+    async def cmd_repeat(self, player):
+        """
+        Usage:
+            {command_prefix}repeat
+        Cycles through the repeat options. Default is no repeat, switchable to repeat all or repeat current song.
+        """
+
+        if player.is_stopped:
+            raise exceptions.CommandError("The repeat mode cannot be changed when I am not playing anything.", expire_in=20)
+
+        player.repeat()
+
+        if player.is_repeatNone:
+            return Response(":play_pause: Repeat mode: None", delete_after=20)
+        if player.is_repeatAll:
+            return Response(":repeat: Repeat mode: All", delete_after=20)
+        if player.is_repeatSingle:
+            return Response(":repeat_one: Repeat mode: Single", delete_after=20)
+			
+    async def cmd_promote(self, player, position=None):
+        """
+        Usage:
+            {command_prefix}promote
+            {command_prefix}promote [song position]
+        Promotes the last song in the queue to the front. 
+        If you specify a position, it promotes the song at that position to the front.
+        """
+
+        if player.is_stopped:
+            raise exceptions.CommandError("I can't modify the queue because I am not playing anything.", expire_in=20)
+        
+        length = len(player.playlist.entries)
+
+        if length < 2:
+            raise exceptions.CommandError("There aren't enough songs in the queue for me to promote that song.", expire_in=20)
+
+        if not position:
+            entry = player.playlist.promote_last()
+        else:
+            try:
+                position = int(position)
+            except ValueError:
+                raise exceptions.CommandError("That is not a valid song number. Please choose a song \
+                    number between 2 and %s." % length, expire_in=20)
+
+            if position == 1:
+                raise exceptions.CommandError("That song is already at the top of the queue.", expire_in=20)
+            if position < 1 or position > length:                
+                raise exceptions.CommandError("I cannot promote a song that is not in the queue. Please choose a song \
+                    number between 2 and %s!" % length, expire_in=20)
+
+            entry = player.playlist.promote_position(position)
+
+        reply_text = "Promoted **%s** to the top of the queue. Estimated time until playing: %s"
+        btext = entry.title
+
+        try:
+            time_until = await player.playlist.estimate_time_until(1, player)
+        except:
+            traceback.print_exc()
+            time_until = ''
+
+        reply_text %= (btext, time_until)
+
+        return Response(reply_text, delete_after=30)
+
+    async def cmd_remove(self, player, position=None):
+        """
+        Usage:
+            {command_prefix}remove
+            {command_prefix}remove [song position]
+        Removes the next song from the queue. 
+        If you specify a position, it removes the song at that position from the queue.
+        """
+
+        if player.is_stopped:
+            raise exceptions.CommandError("I can't modify the queue because there is nothing in the queue.", expire_in=20)
+        
+        length = len(player.playlist.entries)
+
+        if length < 1:
+            raise exceptions.CommandError("There aren't enough songs in the queue for me to remove that track ID.", expire_in=20)
+
+        if not position:
+            entry = player.playlist.remove_first()
+        else:
+            try:
+                position = int(position)
+            except ValueError:
+                raise exceptions.CommandError("This is not a valid song number. Please choose a song \
+                    number between 1 and %s!" % length, expire_in=20)
+
+            if position == 1:                
+                entry = player.playlist.remove_first()
+            elif position < 1 or position > length:                
+                raise exceptions.CommandError("I can't remove a song that is not in the queue. Please choose a song \
+                    number between 1 and %s!" % length, expire_in=20)
+            else:
+                entry = player.playlist.remove_position(position)
+
+        reply_text = ":x: Removed **%s** from the queue." % entry.title
+
+        return Response(reply_text, delete_after=30)
+
+    async def cmd_playnow(self, player, channel, author, permissions, leftover_args, song_url):
+        """
+        Usage:
+            {command_prefix}playnow song_link
+            {command_prefix}playnow text to search for
+        Stops the currently playing song and immediately plays the song requested. \
+        If a link is not provided, the first result from a youtube search is played.
+        """
+
+        song_url = song_url.strip('<>')
+
+        if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
+            raise exceptions.PermissionsError(
+                "You have reached your enqueued song limit (%s)" % permissions.max_songs, expire_in=30
+            )
+
+        await self.send_typing(channel)
+
+        if leftover_args:
+            song_url = ' '.join([song_url, *leftover_args])
+
+        try:
+            info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
+        except Exception as e:
+            raise exceptions.CommandError(e, expire_in=30)
+
+        if not info:
+            raise exceptions.CommandError("That video cannot be played.", expire_in=30)
+
+        # abstract the search handling away from the user
+        # our ytdl options allow us to use search strings as input urls
+        if info.get('url', '').startswith('ytsearch'):
+            # print("[Command:play] Searching for \"%s\"" % song_url)
+            info = await self.downloader.extract_info(
+                player.playlist.loop,
+                song_url,
+                download=False,
+                process=True,    # ASYNC LAMBDAS WHEN
+                on_error=lambda e: asyncio.ensure_future(
+                    self.safe_send_message(channel, "```\n%s\n```" % e, expire_in=120), loop=self.loop),
+                retry_on_error=True
+            )
+
+            if not info:
+                raise exceptions.CommandError(
+                    "Error extracting info from search string, youtubedl returned no data.  "
+                    "You may need to restart me if this continues to happen.", expire_in=30
+                )
+
+            if not all(info.get('entries', [])):
+                # empty list, no data
+                return
+
+            song_url = info['entries'][0]['webpage_url']
+            info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
+            # Now I could just do: return await self.cmd_play(player, channel, author, song_url)
+            # But this is probably fine
+
+        # TODO: Possibly add another check here to see about things like the bandcamp issue
+        # TODO: Where ytdl gets the generic extractor version with no processing, but finds two different urls
+
+        if 'entries' in info:
+            raise exceptions.CommandError("Cannot 'playnow' playlists! You must specify a single song.", expire_in=30)
+        else:
+            if permissions.max_song_length and info.get('duration', 0) > permissions.max_song_length:
+                raise exceptions.PermissionsError(
+                    "Song duration exceeds limit (%s > %s)" % (info['duration'], permissions.max_song_length),
+                    expire_in=30
+                )
+
+            try:
+                entry, position = await player.playlist.add_entry(song_url, channel=channel, author=author)
+                await self.safe_send_message(channel, "Skipping the song currently playing and starting **%s**." % entry.title, expire_in=20)
+                # Get the song ready now, otherwise race condition where finished-playing will fire before
+                # the song is finished downloading, which will then cause another song from autoplaylist to
+                # be added to the queue
+                await entry.get_ready_future()
+
+            except exceptions.WrongEntryTypeError as e:
+                if e.use_url == song_url:
+                    print("[Warning] Determined incorrect entry type, but suggested url is the same.  Help.")
+
+                if self.config.debug_mode:
+                    print("[Info] Assumed url \"%s\" was a single entry, was actually a playlist" % song_url)
+                    print("[Info] Using \"%s\" instead" % e.use_url)
+
+                return await self.cmd_playnow(player, channel, author, permissions, leftover_args, e.use_url)
+
+            if position > 1:
+                player.playlist.promote_last()
+            if player.is_playing:
+                player.skip()
+
+        # return Response(reply_text, delete_after=30)
+		
+    async def cmd_playnext(self, player, channel, author, permissions, leftover_args, song_url):
+        """
+        Usage:
+            {command_prefix}playnext song_link
+            {command_prefix}playnext text to search for
+        Adds a song to the queue and promotes it to the top of the queue to play next.
+        """
+
+        song_url = song_url.strip('<>')
+
+        if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
+            raise exceptions.PermissionsError(
+                "You have reached your enqueued song limit (%s)." % permissions.max_songs, expire_in=30
+            )
+
+        await self.send_typing(channel)
+
+        if leftover_args:
+            song_url = ' '.join([song_url, *leftover_args])
+
+        try:
+            info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
+        except Exception as e:
+            raise exceptions.CommandError(e, expire_in=30)
+
+        if not info:
+            raise exceptions.CommandError("Sorry, that video cannot be played.", expire_in=30)
+
+        # abstract the search handling away from the user
+        # our ytdl options allow us to use search strings as input urls
+        if info.get('url', '').startswith('ytsearch'):
+            # print("[Command:play] Searching for \"%s\"" % song_url)
+            info = await self.downloader.extract_info(
+                player.playlist.loop,
+                song_url,
+                download=False,
+                process=True,    # ASYNC LAMBDAS WHEN
+                on_error=lambda e: asyncio.ensure_future(
+                    self.safe_send_message(channel, "```\n%s\n```" % e, expire_in=120), loop=self.loop),
+                retry_on_error=True
+            )
+
+            if not info:
+                raise exceptions.CommandError(
+                    "Error extracting info from search string, youtube-dl returned no data."
+                    "You may need to restart me if this continues to happen.", expire_in=30
+                )
+
+            if not all(info.get('entries', [])):
+                # empty list, no data
+                return
+
+            song_url = info['entries'][0]['webpage_url']
+            info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
+            # Now I could just do: return await self.cmd_play(player, channel, author, song_url)
+            # But this is probably fine
+
+        # TODO: Possibly add another check here to see about things like the bandcamp issue
+        # TODO: Where ytdl gets the generic extractor version with no processing, but finds two different urls
+
+        if 'entries' in info:
+            raise exceptions.CommandError("I cannot 'playnext' playlists. You must specify a single song.", expire_in=30)
+        else:
+            if permissions.max_song_length and info.get('duration', 0) > permissions.max_song_length:
+                raise exceptions.PermissionsError(
+                    "Song duration exceeds limit (%s > %s). Please request a song under ten minutes in length." % (info['duration'], permissions.max_song_length),
+                    expire_in=30
+                )
+
+            try:
+                entry, position = await player.playlist.add_entry(song_url, channel=channel, author=author)
+                await self.safe_send_message(channel, "Enqueued **%s** to be played. Position in queue: Up next!" % entry.title, expire_in=20)
+                # Get the song ready now, otherwise race condition where finished-playing will fire before
+                # the song is finished downloading, which will then cause another song from autoplaylist to
+                # be added to the queue
+                await entry.get_ready_future()
+
+            except exceptions.WrongEntryTypeError as e:
+                if e.use_url == song_url:
+                    print("[Warning] Determined incorrect entry type, but suggested url is the same. Help.")
+
+                if self.config.debug_mode:
+                    print("[Info] Assumed url \"%s\" was a single entry, but was actually a playlist." % song_url)
+                    print("[Info] Using \"%s\" instead." % e.use_url)
+
+                return await self.cmd_playnow(player, channel, author, permissions, leftover_args, e.use_url)
+
+            if position > 1:
+                player.playlist.promote_last()
+
+    async def cmd_roll(self, channel, author, leftover_args):
+        """
+        Usage:
+            {command_prefix}roll [1-100]d[MAXROLL]
+            {command_prefix}roll [MAXROLL]
+        Roll the set number of dice and show the sum of the rolls, or
+        roll one die and show the result.
+        (^\d+d\d+|^\d+)(\+\d+)?$
+        """
+        if not leftover_args:
+            raise exceptions.CommandError("Unable to roll dice. Usage: {command_prefix}roll [NUMDICE]d[4-20] or {command_prefix}roll [MAXROLL].")
+        diceInput = ''.join(leftover_args)
+        res = re.search(r"(^\d+d\d+$)|(^\d+$)", diceInput)
+        if not res:
+            raise exceptions.CommandError("Unable to roll dice. Usage: {command_prefix}roll [NUMDICE]d[4-20] or {command_prefix}roll [MAXROLL].")
+        match = res.group(0)
+        diceVals = match.split('d')
+        if len(diceVals) == 2:
+            numDice = int(diceVals[0])
+            maxRoll = int(diceVals[1])
+            if not (1 <= numDice <= 100):
+                raise exceptions.CommandError("Unable to roll dice. Usage: {command_prefix}roll [1-100]d[MAXROLL].")
+            if maxRoll < 1:
+                raise exceptions.CommandError("Unable to roll dice. Maximum dice value must be at least 1.")
+            rollSum = 0
+            for i in range (0, numDice):
+                rollSum += randint(1, maxRoll)
+            return Response(":game_die: %s used %s to roll a %d." % (author.mention, diceInput, rollSum), delete_after=30)
+        else:
+            maxRoll = int(diceVals[0])
+            if maxRoll < 1:
+                raise exceptions.CommandError("Unable to roll dice. Maximum dice value must be at least 1.")
+            roll = randint(1, maxRoll)
+            return Response(":game_die: %s rolled a %d." % (author.mention, roll), delete_after=30)
+        return
 
     async def cmd_summon(self, channel, server, author, voice_channel):
         """
@@ -1777,7 +2155,7 @@ class MusicBot(discord.Client):
         """
 
         if not author.voice_channel:
-            raise exceptions.CommandError('You are not in a voice channel!')
+            raise exceptions.CommandError('You need to be in a voice channel for me to be summoned.')
 
         voice_client = self.voice_client_in(server)
         if voice_client and server == author.voice_channel.server:
@@ -1788,16 +2166,16 @@ class MusicBot(discord.Client):
         chperms = author.voice_channel.permissions_for(server.me)
 
         if not chperms.connect:
-            log.warning("Cannot join channel \"{}\", no permission.".format(author.voice_channel.name))
+            log.warning("I cannot join channel \"{}\" because I do not have permission.".format(author.voice_channel.name))
             return Response(
-                "```Cannot join channel \"{}\", no permission.```".format(author.voice_channel.name),
+                "```I cannot join channel \"{}\" because I do not have permission.```".format(author.voice_channel.name),
                 delete_after=25
             )
 
         elif not chperms.speak:
-            log.warning("Will not join channel \"{}\", no permission to speak.".format(author.voice_channel.name))
+            log.warning("I will not join channel \"{}\" because I have no permission to speak.".format(author.voice_channel.name))
             return Response(
-                "```Will not join channel \"{}\", no permission to speak.```".format(author.voice_channel.name),
+                "```I will not join channel \"{}\" because I have no permission to speak.```".format(author.voice_channel.name),
                 delete_after=25
             )
 
@@ -1821,9 +2199,11 @@ class MusicBot(discord.Client):
 
         if player.is_playing:
             player.pause()
+            ##return Response("The current song and queue are now paused. Use the resume command to resume playing.", delete_after=30)
+            return Response("The current song and queue are now paused. Type {}resume to resume playing.".format(self.config.command_prefix), delete_after=30)
 
         else:
-            raise exceptions.CommandError('Player is not playing.', expire_in=30)
+            raise exceptions.CommandError('There is nothing to pause since I am not playing anything.', expire_in=30)
 
     async def cmd_resume(self, player):
         """
@@ -1835,9 +2215,10 @@ class MusicBot(discord.Client):
 
         if player.is_paused:
             player.resume()
+            return Response("The current song and queue have now resumed playing.", delete_after=30)
 
         else:
-            raise exceptions.CommandError('Player is not paused.', expire_in=30)
+            raise exceptions.CommandError('I am not paused. If I am not playing anything the queue is probably empty.', expire_in=30)
 
     async def cmd_shuffle(self, channel, player):
         """
@@ -1861,7 +2242,7 @@ class MusicBot(discord.Client):
             await asyncio.sleep(0.6)
 
         await self.safe_delete_message(hand, quiet=True)
-        return Response("\N{OK HAND SIGN}", delete_after=15)
+        return Response("The queue has been shuffled.", delete_after=15)
 
     async def cmd_clear(self, player, author):
         """
@@ -1872,18 +2253,18 @@ class MusicBot(discord.Client):
         """
 
         player.playlist.clear()
-        return Response('\N{PUT LITTER IN ITS PLACE SYMBOL}', delete_after=20)
+        return Response('The queue has been cleared. \N{PUT LITTER IN ITS PLACE SYMBOL}', delete_after=20)
 
     async def cmd_skip(self, player, channel, author, message, permissions, voice_channel):
         """
         Usage:
             {command_prefix}skip
 
-        Skips the current song when enough votes are cast, or by the bot owner.
+        Skips the current song when enough votes are cast (if voting ratio requires more than 1 vote). 
         """
 
         if player.is_stopped:
-            raise exceptions.CommandError("Can't skip! The player is not playing!", expire_in=20)
+            raise exceptions.CommandError("I am currently not playing anything.", expire_in=20)
 
         if not player.current_entry:
             if player.playlist.peek():
@@ -1954,7 +2335,7 @@ class MusicBot(discord.Client):
         """
 
         if not new_volume:
-            return Response('Current volume: `%s%%`' % int(player.volume * 100), reply=True, delete_after=20)
+            return Response('the current volume is at `%s%%`.' % int(player.volume * 100), reply=True, delete_after=20)
 
         relative = False
         if new_volume[0] in '+-':
@@ -1964,7 +2345,7 @@ class MusicBot(discord.Client):
             new_volume = int(new_volume)
 
         except ValueError:
-            raise exceptions.CommandError('{} is not a valid number'.format(new_volume), expire_in=20)
+            raise exceptions.CommandError('{} is not a valid number.'.format(new_volume), expire_in=20)
 
         vol_change = None
         if relative:
@@ -1976,7 +2357,7 @@ class MusicBot(discord.Client):
         if 0 < new_volume <= 100:
             player.volume = new_volume / 100.0
 
-            return Response('updated volume from %d to %d' % (old_volume, new_volume), reply=True, delete_after=20)
+            return Response('I updated the volume from %d to %d percent.' % (old_volume, new_volume), reply=True, delete_after=20)
 
         else:
             if relative:
@@ -2004,6 +2385,7 @@ class MusicBot(discord.Client):
             song_progress = ftimedelta(timedelta(seconds=player.progress))
             song_total = ftimedelta(timedelta(seconds=player.current_entry.duration))
             prog_str = '`[%s/%s]`' % (song_progress, song_total)
+            thumbnail = player.current_entry.filename_thumbnail
 
             if player.current_entry.meta.get('channel', False) and player.current_entry.meta.get('author', False):
                 lines.append("Currently Playing: **%s** added by **%s** %s\n" % (
@@ -2031,7 +2413,7 @@ class MusicBot(discord.Client):
 
         if not lines:
             lines.append(
-                'There are no songs queued! Queue something with {}play.'.format(self.config.command_prefix))
+                'The queue is currently empty. Queue something with {}play.'.format(self.config.command_prefix))
 
         message = '\n'.join(lines)
         return Response(message, delete_after=30)
@@ -2292,15 +2674,15 @@ class MusicBot(discord.Client):
 
     async def cmd_disconnect(self, server):
         await self.disconnect_voice_client(server)
-        return Response("\N{DASH SYMBOL}", delete_after=20)
+        return Response("Disconnecting from the discord server. See ya! \N{DASH SYMBOL}", delete_after=20)
 
     async def cmd_restart(self, channel):
-        await self.safe_send_message(channel, "\N{WAVING HAND SIGN}")
+        await self.safe_send_message(channel, "I am now restarting ... please wait ten seconds before re-summoning me. Be back soon! \N{WAVING HAND SIGN}")
         await self.disconnect_all_voice_clients()
         raise exceptions.RestartSignal()
 
     async def cmd_shutdown(self, channel):
-        await self.safe_send_message(channel, "\N{WAVING HAND SIGN}")
+        await self.safe_send_message(channel, "Shutting down ... goodbye. \N{WAVING HAND SIGN}")
         await self.disconnect_all_voice_clients()
         raise exceptions.TerminateSignal()
 
