@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 import traceback
+import re
 
 from enum import Enum
 from .constructs import Serializable
@@ -23,6 +24,7 @@ class EntryTypes(Enum):
 class BasePlaylistEntry(Serializable):
     def __init__(self):
         self.filename = None
+        self.filename_thumbnail = None
         self._is_downloading = False
         self._waiting_futures = []
 
@@ -99,6 +101,7 @@ class URLPlaylistEntry(BasePlaylistEntry):
             'downloaded': self.is_downloaded,
             'expected_filename': self.expected_filename,
             'filename': self.filename,
+            'filename_thumbnail': self.filename_thumbnail,
             'full_filename': os.path.abspath(self.filename) if self.filename else self.filename,
             'meta': {
                 name: {
@@ -120,6 +123,7 @@ class URLPlaylistEntry(BasePlaylistEntry):
             duration = data['duration']
             downloaded = data['downloaded']
             filename = data['filename'] if downloaded else None
+            filename_thumbnail = data['filename_thumbnail'] if downloaded else None
             expected_filename = data['expected_filename']
             meta = {}
 
@@ -153,6 +157,8 @@ class URLPlaylistEntry(BasePlaylistEntry):
 
             # the generic extractor requires special handling
             if extractor == 'generic':
+                # remove thumbnail images from list
+                imgPattern = re.compile('(\.(jpg|jpeg|png|gif|bmp))$', flags=re.IGNORECASE)
                 flistdir = [f.rsplit('-', 1)[0] for f in os.listdir(self.download_folder)]
                 expected_fname_noex, fname_ex = os.path.basename(self.expected_filename).rsplit('.', 1)
 
@@ -234,6 +240,10 @@ class URLPlaylistEntry(BasePlaylistEntry):
             # What the fuck do I do now?
 
         self.filename = unhashed_fname = self.playlist.downloader.ytdl.prepare_filename(result)
+		
+        # Search for file name with an image suffix
+        imgPattern = re.compile(self.filename.lstrip(self.download_folder + os.sep).rsplit('.', 1)[0] + '(\.(jpg|jpeg|png|gif|bmp))$', re.IGNORECASE)
+        self.filename_thumbnail = next(os.path.join(self.download_folder, f) for f in os.listdir(self.download_folder) if imgPattern.search(f))
 
         if hash:
             # insert the 8 last characters of the file hash to the file name to ensure uniqueness
@@ -266,6 +276,7 @@ class StreamPlaylistEntry(BasePlaylistEntry):
             'version': 1,
             'url': self.url,
             'filename': self.filename,
+            'filename_thumbnail': self.filename_thumbnail,
             'title': self.title,
             'destination': self.destination,
             'meta': {
