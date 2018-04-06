@@ -1,7 +1,8 @@
 import os.path
 
-MAIN_VERSION = '1.9.6_3'
-SUB_VERSION = '-1.13b'
+
+MAIN_VERSION = '1.9.7'
+SUB_VERSION = '1.13b'
 VERSION = MAIN_VERSION + SUB_VERSION
 
 AUDIO_CACHE_PATH = os.path.join(os.getcwd(), 'audio_cache')
