@@ -307,30 +307,30 @@ class ConfigDefaults:
     spotify_clientid = None
     spotify_clientsecret = None
 
-    command_prefix = '!'
+    command_prefix = '/'
     bound_channels = set()
     autojoin_channels = set()
 
-    default_volume = 0.15
-    skips_required = 4
-    skip_ratio_required = 0.5
+    default_volume = 0.20
+    skips_required = 1
+    skip_ratio_required = 0
     save_videos = True
     show_thumbnails = True
     now_playing_mentions = False
-    auto_summon = True
-    auto_playlist = True
+    auto_summon = False
+    auto_playlist = False
     auto_playlist_random = True
     auto_pause = True
     delete_messages = True
-    delete_invoking = False
+    delete_invoking = True
     persistent_queue = True
     debug_level = 'INFO'
     status_message = None
     write_current_song = False
     allow_author_skip = True
-    use_experimental_equalization = False
+    use_experimental_equalization = True
     embeds = True
-    queue_length = 10
+    queue_length = 20
     remove_ap = True
     show_config_at_start = False
 
