@@ -21,11 +21,11 @@ class PermissionsDefaults:
     MaxSongLength = 0
     MaxPlaylistLength = 0
 
-    AllowPlaylists = False
-    InstaSkip = False
-    Remove = False
+    AllowPlaylists = True
+    InstaSkip = True
+    Remove = True
     SkipWhenAbsent = False
-    BypassKaraokeMode = False
+    BypassKaraokeMode = True
 
     Extractors = set()
 

@@ -575,8 +575,8 @@ class MusicBot(discord.Client):
             if server.id not in self.players:
                 if not create:
                     raise exceptions.CommandError(
-                        'The bot is not in a voice channel.  '
-                        'Use %ssummon to summon it to your voice channel.' % self.config.command_prefix)
+                        'I must be in a voice channel to play something.  '
+                        'Use `%ssummon` to summon me to your voice channel.' % self.config.command_prefix, expire_in=20)
 
                 voice_client = await self.get_voice_client(channel)
 
@@ -620,6 +620,7 @@ class MusicBot(discord.Client):
         channel = entry.meta.get('channel', None)
         author = entry.meta.get('author', None)
         thumbnail = entry.filename_thumbnail
+        duration = ftimedelta(timedelta(seconds=player.current_entry.duration))
 
         if channel and author:
             last_np_msg = self.server_specific_data[channel.server]['last_np_msg']
@@ -638,11 +639,11 @@ class MusicBot(discord.Client):
                     player.voice_client.channel.name, entry.title, entry.meta['author'].name)
                 player.skip()
             elif self.config.now_playing_mentions:
-                newmsg = '**%s** - your song **%s** is now playing in `%s`.' % (
-                    entry.meta['author'].mention, entry.title, player.voice_client.channel.name)
+                newmsg = '**%s** - your song **%s** is now playing in `%s`. `(%s)`' % (
+                    entry.meta['author'].mention, entry.title, player.voice_client.channel.name, duration)
             else:
-                newmsg = 'Now playing in `%s`: **%s** added by **%s**.' % (
-                    player.voice_client.channel.name, entry.title, entry.meta['author'].name)
+                newmsg = 'Now playing in `%s`: **%s** added by **%s**. `(%s)`' % (
+                    player.voice_client.channel.name, entry.title, entry.meta['author'].name, duration)
 
             if self.server_specific_data[channel.server]['last_np_msg']:
                 self.server_specific_data[channel.server]['last_np_msg'] = await self.safe_edit_message(last_np_msg, newmsg, send_if_fail=True, fp=thumbnail)
@@ -1306,7 +1307,7 @@ class MusicBot(discord.Client):
                         delete_after=60
                     )
                 else:
-                    raise exceptions.CommandError(self.str.get('cmd-help-invalid', "No such command"), expire_in=10)
+                    raise exceptions.CommandError(self.str.get('cmd-help-invalid', "No such command."), expire_in=20)
 
         elif message.author.id == self.config.owner_id:
             await self.gen_cmd_list(message, list_all_cmds=True)
@@ -1461,12 +1462,14 @@ class MusicBot(discord.Client):
             {command_prefix}play text to search for
             {command_prefix}play spotify_uri
 
-        Adds the song to the playlist.  If a link is not provided, the first
-        result from a youtube search is added to the queue.
-
-        If enabled in the config, the bot will also support Spotify URIs, however
-        it will use the metadata (e.g song name and artist) to find a YouTube
-        equivalent of the song. Streaming from Spotify is not possible.
+        - YouTube (including playlists), SoundCloud, & Bandcamp links are compatible.
+        - Text queries will use YouTube videos by default.
+        - Find the Spotify URI of your request by right clicking the song/album/playlist in Spotify, 
+        go to "Share", and "Copy Spotify URI" after the play command. This will only work if 
+        enabled in the bot's config. The bot will only use the metadata (song name & artist) to find 
+        a YouTube equivalent of the song(s) due to limitations with the current Spotify API.
+        
+        Please use the stream command for streams.
         """
 
         song_url = song_url.strip('<>')
@@ -1503,26 +1506,26 @@ class MusicBot(discord.Client):
                         song_url = song_url.split(":", 1)[1]
                         res = await self.spotify.get_album(song_url)
                         await self._do_playlist_checks(permissions, player, author, res['tracks']['items'])
-                        procmesg = await self.safe_send_message(channel, self.str.get('cmd-play-spotify-album-process', 'I am processing album **{0}**. This may take a while depending on the size of the album. Please wait before shuffling ...').format(res['name']))
+                        procmesg = await self.safe_send_message(channel, self.str.get('cmd-play-spotify-album-process', 'I am now processing Spotify album **{0}**. This may take a while depending on the size of the album. Please wait before shuffling ...').format(res['name'])) # TODO: Also fetch Spotify artist name for album process and queued response
                         for i in res['tracks']['items']:
                             song_url = i['name'] + ' ' + i['artists'][0]['name']
                             log.debug('Processing {0}'.format(song_url))
                             await self.cmd_play(message, player, channel, author, permissions, leftover_args, song_url)
                         await self.safe_delete_message(procmesg)
-                        return Response(self.str.get('cmd-play-spotify-album-queued', "I have queued the album **{0}** with **{1}** songs.").format(res['name'], len(res['tracks']['items'])), delete_after=30)
+                        return Response(self.str.get('cmd-play-spotify-album-queued', "I have finished queuing the Spotify album **{0}** with **{1}** songs. Shuffle the queue by typing `{2}shuffle`.").format(res['name'], len(res['tracks']['items']), self.config.command_prefix), delete_after=30)
 
                     elif song_url.startswith('user:') and 'playlist:' in song_url:
                         user = song_url.split(":",)[1]
                         song_url = song_url.split(":", 3)[3]
                         res = await self.spotify.get_playlist(user, song_url)
                         await self._do_playlist_checks(permissions, player, author, res['tracks']['items'])
-                        procmesg = await self.safe_send_message(channel, self.str.get('cmd-play-spotify-playlist-process', 'Processing playlist **{0}**. This may take a while depending on the size of the playlist. Please wait before shuffling ...').format(res['name']))
+                        procmesg = await self.safe_send_message(channel, self.str.get('cmd-play-spotify-playlist-process', 'I am now processing Spotify playlist **{0}**. This may take a while depending on the size of the playlist. Please wait before shuffling ...').format(res['name']))
                         for i in res['tracks']['items']:
                             song_url = i['track']['name'] + ' ' + i['track']['artists'][0]['name']
                             log.debug('Processing {0}'.format(song_url))
                             await self.cmd_play(message, player, channel, author, permissions, leftover_args, song_url)
                         await self.safe_delete_message(procmesg)
-                        return Response(self.str.get('cmd-play-spotify-playlist-queued', "I have queued the playlist **{0}** with **{1}** songs.").format(res['name'], len(res['tracks']['items'])), delete_after=30)
+                        return Response(self.str.get('cmd-play-spotify-playlist-queued', "I have finished queuing the Spotify playlist **{0}** with **{1}** songs. Shuffle the queue by typing `{2}shuffle`.").format(res['name'], len(res['tracks']['items']), self.config.command_prefix), delete_after=30)
 
                     else:
                         raise exceptions.CommandError(self.str.get('cmd-play-spotify-unsupported', 'That is not a supported Spotify URI. Please right click the item in Spotify, select `Share`, then select `Copy Spotify URI`. Paste that info after the play command.'), expire_in=30)
@@ -1711,18 +1714,18 @@ class MusicBot(discord.Client):
 
                     return await self.cmd_play(player, channel, author, permissions, leftover_args, e.use_url)
 
-                reply_text = self.str.get('cmd-play-song-reply', "Enqueued **%s** to be played. Position in queue: %s.")
+                reply_text = self.str.get('cmd-play-song-reply', "Enqueued **%s** to be played. Position in queue: **%s**.")
                 btext = entry.title
 
 
             if position == 1 and player.is_stopped:
-                position = self.str.get('cmd-play-next', 'Up next!')
+                position = self.str.get('cmd-play-next', 'Up next')
                 reply_text %= (btext, position)
 
             else:
                 try:
                     time_until = await player.playlist.estimate_time_until(position, player)
-                    reply_text += self.str.get('cmd-play-eta', ' - estimated time until playing: %s.')
+                    reply_text += self.str.get('cmd-play-eta', '\n\nEstimated time until playing: `%s`.')
                 except:
                     traceback.print_exc()
                     time_until = ''
