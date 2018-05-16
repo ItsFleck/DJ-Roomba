@@ -55,7 +55,7 @@ def main():
 
     try:
         from musicbot.constants import VERSION
-        print('MusicBot is at version {0}'.format(VERSION))
+        print('DJ Roomba is at version {0}'.format(VERSION))
     except Exception:
         pass
 
