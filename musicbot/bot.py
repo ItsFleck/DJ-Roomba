@@ -1506,26 +1506,26 @@ class MusicBot(discord.Client):
                         song_url = song_url.split(":", 1)[1]
                         res = await self.spotify.get_album(song_url)
                         await self._do_playlist_checks(permissions, player, author, res['tracks']['items'])
-                        procmesg = await self.safe_send_message(channel, self.str.get('cmd-play-spotify-album-process', 'I am now processing Spotify album **{0}**. This may take a while depending on the size of the album. Please wait before shuffling ...').format(res['name'])) # TODO: Also fetch Spotify artist name for album process and queued response
+                        procmesg = await self.safe_send_message(channel, self.str.get('cmd-play-spotify-album-process', 'Processing Spotify album **{0}**. This can take a while for large albums. Please wait before shuffling ...').format(res['name'])) # TODO: Also fetch Spotify artist name for album process and queued response
                         for i in res['tracks']['items']:
                             song_url = i['name'] + ' ' + i['artists'][0]['name']
                             log.debug('Processing {0}'.format(song_url))
                             await self.cmd_play(message, player, channel, author, permissions, leftover_args, song_url)
                         await self.safe_delete_message(procmesg)
-                        return Response(self.str.get('cmd-play-spotify-album-queued', "I have finished queuing the Spotify album **{0}** with **{1}** songs. Shuffle the queue by typing `{2}shuffle`.").format(res['name'], len(res['tracks']['items']), self.config.command_prefix), delete_after=30)
+                        return Response(self.str.get('cmd-play-spotify-album-queued', "I have finished processing the Spotify album **{0}** with **{1}** songs added to the queue. Shuffle the queue by typing `{2}shuffle`.").format(res['name'], len(res['tracks']['items']), self.config.command_prefix), delete_after=30)
 
                     elif song_url.startswith('user:') and 'playlist:' in song_url:
                         user = song_url.split(":",)[1]
                         song_url = song_url.split(":", 3)[3]
                         res = await self.spotify.get_playlist(user, song_url)
                         await self._do_playlist_checks(permissions, player, author, res['tracks']['items'])
-                        procmesg = await self.safe_send_message(channel, self.str.get('cmd-play-spotify-playlist-process', 'I am now processing Spotify playlist **{0}**. This may take a while depending on the size of the playlist. Please wait before shuffling ...').format(res['name']))
+                        procmesg = await self.safe_send_message(channel, self.str.get('cmd-play-spotify-playlist-process', 'Processing Spotify playlist **{0}**. This can take a while for large playlists. Please wait before shuffling ...').format(res['name']))
                         for i in res['tracks']['items']:
                             song_url = i['track']['name'] + ' ' + i['track']['artists'][0]['name']
                             log.debug('Processing {0}'.format(song_url))
                             await self.cmd_play(message, player, channel, author, permissions, leftover_args, song_url)
                         await self.safe_delete_message(procmesg)
-                        return Response(self.str.get('cmd-play-spotify-playlist-queued', "I have finished queuing the Spotify playlist **{0}** with **{1}** songs. Shuffle the queue by typing `{2}shuffle`.").format(res['name'], len(res['tracks']['items']), self.config.command_prefix), delete_after=30)
+                        return Response(self.str.get('cmd-play-spotify-playlist-queued', "I have finished processing the Spotify playlist **{0}** with **{1}** songs added to the queue. Shuffle the queue by typing `{2}shuffle`.").format(res['name'], len(res['tracks']['items']), self.config.command_prefix), delete_after=30)
 
                     else:
                         raise exceptions.CommandError(self.str.get('cmd-play-spotify-unsupported', 'That is not a supported Spotify URI. Please right click the item in Spotify, select `Share`, then select `Copy Spotify URI`. Paste that info after the play command.'), expire_in=30)
@@ -1825,8 +1825,8 @@ class MusicBot(discord.Client):
 
             raise exceptions.CommandError(basetext, expire_in=30)
 
-        return Response(self.str.get('cmd-play-playlist-reply-secs', "{0} songs have been queued in {1} seconds. Type `{2}shuffle` to shuffle the queue.").format(
-            songs_added, fixg(ttime, 1), self.config.command_prefix), delete_after=30)
+        return Response(self.str.get('cmd-play-playlist-end-proc', "I have finished processing your playlist with **{0}** songs and have added them to the queue. Type `{1}shuffle` to shuffle the queue.").format(
+            songs_added, self.config.command_prefix), delete_after=30)
 
     async def cmd_stream(self, player, channel, author, permissions, song_url):
         """
@@ -2334,7 +2334,7 @@ class MusicBot(discord.Client):
 
             if position > 1:
                 player.playlist.promote_last()
-                return Response("Enqueued **{0}** to be played. Position in queue: **Up next!**".format(entry.title), delete_after=30)
+                return Response("Enqueued **{0}** to be played. Position in queue: **Up next.**".format(entry.title), delete_after=30)
 
     async def cmd_roll(self, channel, author, leftover_args):
         """
