@@ -1324,7 +1324,7 @@ class MusicBot(discord.Client):
 
     async def cmd_botinfo(self, message):
         """Returns general information about DJ Roomba."""
-        return Response("DJ Roomba is a forked version of MusicBot for Discord with additional features and a cleaner chat presence. DJ Roomba is on version `1.2.2` and is running on top of MusicBot version `1.9.7`.\n\n DJ Roomba GitHub Repo: `https://github.com/ItsFleck/DJ-Roomba`\n MusicBot GitHub Repo: `https://github.com/Just-Some-Bots/MusicBot`", delete_after=60)
+        return Response("DJ Roomba is a forked version of MusicBot for Discord with additional features and a cleaner chat presence. DJ Roomba is on version `1.2.3` and is running on top of MusicBot version `1.9.7`.\n\n DJ Roomba GitHub Repo: `https://github.com/ItsFleck/DJ-Roomba`\n MusicBot GitHub Repo: `https://github.com/Just-Some-Bots/MusicBot`", delete_after=60)
 
     async def cmd_blacklist(self, message, user_mentions, option, something):
         """
@@ -2151,7 +2151,7 @@ class MusicBot(discord.Client):
 #
 #        return Response(reply_text, delete_after=30)
 #
-    async def cmd_playnow(self, player, channel, author, permissions, leftover_args, song_url):
+    async def cmd_playnow(self, message, player, channel, author, permissions, leftover_args, song_url):
         """
         Usage:
             {command_prefix}playnow song_link
@@ -2162,82 +2162,142 @@ class MusicBot(discord.Client):
 
         song_url = song_url.strip('<>')
 
-        if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
-            raise exceptions.PermissionsError(
-                "You have reached your enqueued song limit (%s)" % permissions.max_songs, expire_in=30
-            )
-
         await self.send_typing(channel)
 
         if leftover_args:
             song_url = ' '.join([song_url, *leftover_args])
+        leftover_args = None  # prevent some crazy shit happening down the line
 
-        try:
-            info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
-        except Exception as e:
-            raise exceptions.CommandError(e, expire_in=30)
+        # Make sure forward slashes work properly in search queries
+        linksRegex = '((http(s)*:[/][/]|www.)([a-z]|[A-Z]|[0-9]|[/.]|[~])*)'
+        pattern = re.compile(linksRegex)
+        matchUrl = pattern.match(song_url)
+        song_url = song_url.replace('/', '%2F') if matchUrl is None else song_url
 
-        if not info:
-            raise exceptions.CommandError("That video cannot be played.", expire_in=30)
+        # Rewrite YouTube playlist URLs if the wrong URL type is given
+        playlistRegex = r'watch\?v=.+&(list=[^&]+)'
+        matches = re.search(playlistRegex, song_url)
+        groups = matches.groups() if matches is not None else []
+        song_url = "https://www.youtube.com/playlist?" + groups[0] if len(groups) > 0 else song_url
 
-        # abstract the search handling away from the user
-        # our ytdl options allow us to use search strings as input urls
-        if info.get('url', '').startswith('ytsearch'):
-            # print("[Command:play] Searching for \"%s\"" % song_url)
-            info = await self.downloader.extract_info(
-                player.playlist.loop,
-                song_url,
-                download=False,
-                process=True,    # ASYNC LAMBDAS WHEN
-                on_error=lambda e: asyncio.ensure_future(
-                    self.safe_send_message(channel, "```\n%s\n```" % e, expire_in=120), loop=self.loop),
-                retry_on_error=True
-            )
+        if song_url.startswith('spotify:'):  # treat it as probably a spotify URI
+            if self.config._spotify:
+                song_url = song_url.split(":", 1)[1]
+                try:
 
-            if not info:
-                raise exceptions.CommandError(
-                    "Error extracting info from search string, youtubedl returned no data.  "
-                    "You may need to restart me if this continues to happen.", expire_in=30
+                    if song_url.startswith('track:'):
+                        song_url = song_url.split(":", 1)[1]
+                        res = await self.spotify.get_track(song_url)
+                        song_url = res['artists'][0]['name'] + ' ' + res['name']  # spooky
+
+                    elif song_url.startswith('album:'):
+                        return Response(self.str.get('cmd-playnow-spotify-album', "Sorry, but you cannot playnow Spotify albums. Please add the album to the queue using {0}play.").format(self.config.command_prefix), delete_after=30)
+
+                    elif song_url.startswith('user:') and 'playlist:' in song_url:
+                        return Response(self.str.get('cmd-playnow-spotify-playlist', "Sorry, but you cannot playnow Spotify playlists. Please add the playlist to the queue using {0}play.").format(self.config.command_prefix), delete_after=30)
+
+                    else:
+                        raise exceptions.CommandError(self.str.get('cmd-play-spotify-unsupported', 'That is not a supported Spotify URI. Please right click the item in Spotify, select `Share`, then select `Copy Spotify URI`. Paste that info after the play command.'), expire_in=30)
+
+                except exceptions.SpotifyError:
+                    raise exceptions.CommandError(self.str.get('cmd-play-spotify-invalid', 'You either provided an invalid URI or an unknown problem occurred. Please make sure to right click the item in Spotify, select `Share`, then select `Copy Spotify URI`.'))
+            else:
+                raise exceptions.CommandError(self.str.get('cmd-play-spotify-unavailable', 'I am not configured to support Spotify URIs at the moment.'))
+
+        async with self.aiolocks[_func_() + ':' + author.id]:
+            if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
+                raise exceptions.PermissionsError(
+                    self.str.get('cmd-play-limit', "You have reached your enqueued song limit ({0}).").format(permissions.max_songs), expire_in=30
                 )
 
-            if not all(info.get('entries', [])):
-                # empty list, no data
-                return
-
-            song_url = info['entries'][0]['webpage_url']
-            info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
-            # Now I could just do: return await self.cmd_play(player, channel, author, song_url)
-            # But this is probably fine
-
-        # TODO: Possibly add another check here to see about things like the bandcamp issue
-        # TODO: Where ytdl gets the generic extractor version with no processing, but finds two different urls
-
-        if 'entries' in info:
-            raise exceptions.CommandError("Cannot 'playnow' playlists! You must specify a single song.", expire_in=30)
-        else:
-            if permissions.max_song_length and info.get('duration', 0) > permissions.max_song_length:
+            if player.karaoke_mode and not permissions.bypass_karaoke_mode:
                 raise exceptions.PermissionsError(
-                    "Song duration exceeds limit (%s > %s)" % (info['duration'], permissions.max_song_length),
-                    expire_in=30
+                    self.str.get('karaoke-enabled', "Karaoke mode is enabled. Please try again when it's disabled."), expire_in=30
                 )
 
             try:
-                entry, position = await player.playlist.add_entry(song_url, channel=channel, author=author)
-#                await self.safe_send_message(channel, "Skipping the song currently playing and starting **%s**." % entry.title, expire_in=20)
-                # Get the song ready now, otherwise race condition where finished-playing will fire before
-                # the song is finished downloading, which will then cause another song from autoplaylist to
-                # be added to the queue
-                await entry.get_ready_future()
+                info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
+            except Exception as e:
+                if 'unknown url type' in str(e):
+                    song_url = song_url.replace(':', '')  # it's probably not actually an extractor
+                    info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
+                else:
+                    raise exceptions.CommandError(e, expire_in=30)
 
-            except exceptions.WrongEntryTypeError as e:
-                if e.use_url == song_url:
-                    print("[Warning] Determined incorrect entry type, but suggested url is the same.  Help.")
+            if not info:
+                raise exceptions.CommandError(
+                    self.str.get('cmd-play-noinfo', "That video cannot be played. Try using the {0}stream command.").format(self.config.command_prefix),
+                    expire_in=30
+                )
 
-                if self.config.debug_mode:
-                    print("[Info] Assumed url \"%s\" was a single entry, was actually a playlist" % song_url)
-                    print("[Info] Using \"%s\" instead" % e.use_url)
+            log.debug(info)
 
-                return await self.cmd_playnow(player, channel, author, permissions, leftover_args, e.use_url)
+            if info.get('extractor', '') not in permissions.extractors and permissions.extractors:
+                raise exceptions.PermissionsError(
+                    self.str.get('cmd-play-badextractor', "You do not have permission to play media from this service."), expire_in=30
+                )
+
+            # abstract the search handling away from the user
+            # our ytdl options allow us to use search strings as input urls
+            if info.get('url', '').startswith('ytsearch'):
+                # print("[Command:play] Searching for \"%s\"" % song_url)
+                info = await self.downloader.extract_info(
+                    player.playlist.loop,
+                    song_url,
+                    download=False,
+                    process=True,    # ASYNC LAMBDAS WHEN
+                    on_error=lambda e: asyncio.ensure_future(
+                        self.safe_send_message(channel, "```\n%s\n```" % e, expire_in=120), loop=self.loop),
+                    retry_on_error=True
+                )
+
+                if not info:
+                    raise exceptions.CommandError(
+                        self.str.get('cmd-play-nodata', "Error extracting info from search string, youtubedl returned no data. "
+                                                        "You may need to restart the bot if this continues to happen."), expire_in=30
+                    )
+
+                if not all(info.get('entries', [])):
+                    # empty list, no data
+                    log.debug("Got empty list, no data")
+                    return
+
+                # TODO: handle 'webpage_url' being 'ytsearch:...' or extractor type
+                song_url = info['entries'][0]['webpage_url']
+                info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
+                # Now I could just do: return await self.cmd_play(player, channel, author, song_url)
+                # But this is probably fine
+
+            # TODO: Possibly add another check here to see about things like the bandcamp issue
+            # TODO: Where ytdl gets the generic extractor version with no processing, but finds two different urls
+
+#            entry_list, position = await player.playlist.import_from(song_url, channel=channel, author=author)
+            
+            if 'entries' in info:
+                raise exceptions.CommandError(self.str.get('cmd-playnow-playlist', "Sorry, but you cannot playnow playlists. Please add the playlist to the queue using {0}play.").format(self.config.command_prefix), expire_in=30)
+            else:
+                if permissions.max_song_length and info.get('duration', 0) > permissions.max_song_length:
+                    raise exceptions.PermissionsError(
+                        "Song duration exceeds limit (%s > %s). Please request a song under ten minutes in length." % (info['duration'], permissions.max_song_length),
+                        expire_in=30
+                    )
+                try:
+                    entry, position = await player.playlist.add_entry(song_url, channel=channel, author=author)
+                    await entry.get_ready_future()
+#                    await self.safe_send_message(channel, "Enqueued **%s** to be played. Position in queue: Up next!" % entry.title, expire_in=20)
+                    # Get the song ready now, otherwise race condition where finished-playing will fire before
+                    # the song is finished downloading, which will then cause another song from autoplaylist to
+                    # be added to the queue
+
+                except exceptions.WrongEntryTypeError as e:
+                    if e.use_url == song_url:
+                        print("[Warning] Determined incorrect entry type, but suggested url is the same. Help.")
+
+                    if self.config.debug_mode:
+                        print("[Info] Assumed url \"%s\" was a single entry, but was actually a playlist." % song_url)
+                        print("[Info] Using \"%s\" instead." % e.use_url)
+
+                    return await self.cmd_playnow(player, channel, author, permissions, leftover_args, e.use_url)            
 
             if position > 1:
                 player.playlist.promote_last()
@@ -2246,7 +2306,7 @@ class MusicBot(discord.Client):
             return Response("Skipping the song currently playing and starting **{0}**.".format(entry.title), delete_after=30)
 
 		
-    async def cmd_playnext(self, player, channel, author, permissions, leftover_args, song_url):
+    async def cmd_playnext(self, message, player, channel, author, permissions, leftover_args, song_url):
         """
         Usage:
             {command_prefix}playnext song_link
@@ -2256,85 +2316,146 @@ class MusicBot(discord.Client):
 
         song_url = song_url.strip('<>')
 
-        if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
-            raise exceptions.PermissionsError("You have reached your enqueued song limit (%s)." % permissions.max_songs, expire_in=30
-            )
-
         await self.send_typing(channel)
 
         if leftover_args:
             song_url = ' '.join([song_url, *leftover_args])
+        leftover_args = None  # prevent some crazy shit happening down the line
 
-        try:
-            info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
-        except Exception as e:
-            raise exceptions.CommandError(e, expire_in=30)
+        # Make sure forward slashes work properly in search queries
+        linksRegex = '((http(s)*:[/][/]|www.)([a-z]|[A-Z]|[0-9]|[/.]|[~])*)'
+        pattern = re.compile(linksRegex)
+        matchUrl = pattern.match(song_url)
+        song_url = song_url.replace('/', '%2F') if matchUrl is None else song_url
 
-        if not info:
-            raise exceptions.CommandError("Sorry, that video cannot be played.", expire_in=30)
+        # Rewrite YouTube playlist URLs if the wrong URL type is given
+        playlistRegex = r'watch\?v=.+&(list=[^&]+)'
+        matches = re.search(playlistRegex, song_url)
+        groups = matches.groups() if matches is not None else []
+        song_url = "https://www.youtube.com/playlist?" + groups[0] if len(groups) > 0 else song_url
 
-        # abstract the search handling away from the user
-        # our ytdl options allow us to use search strings as input urls
-        if info.get('url', '').startswith('ytsearch'):
-            # print("[Command:play] Searching for \"%s\"" % song_url)
-            info = await self.downloader.extract_info(
-                player.playlist.loop,
-                song_url,
-                download=False,
-                process=True,    # ASYNC LAMBDAS WHEN
-                on_error=lambda e: asyncio.ensure_future(
-                    self.safe_send_message(channel, "```\n%s\n```" % e, expire_in=120), loop=self.loop),
-                retry_on_error=True
-            )
+        if song_url.startswith('spotify:'):  # treat it as probably a spotify URI
+            if self.config._spotify:
+                song_url = song_url.split(":", 1)[1]
+                try:
 
-            if not info:
-                raise exceptions.CommandError(
-                    "Error extracting info from search string, youtube-dl returned no data."
-                    "You may need to restart me if this continues to happen.", expire_in=30
+                    if song_url.startswith('track:'):
+                        song_url = song_url.split(":", 1)[1]
+                        res = await self.spotify.get_track(song_url)
+                        song_url = res['artists'][0]['name'] + ' ' + res['name']  # spooky
+
+                    elif song_url.startswith('album:'):
+                        return Response(self.str.get('cmd-playnext-spotify-album', "Sorry, but you cannot playnext Spotify albums. Please add the album to the queue using {0}play.").format(self.config.command_prefix), delete_after=30)
+
+                    elif song_url.startswith('user:') and 'playlist:' in song_url:
+                        return Response(self.str.get('cmd-playnext-spotify-playlist', "Sorry, but you cannot playnext Spotify playlists. Please add the playlist to the queue using {0}play.").format(self.config.command_prefix), delete_after=30)
+
+                    else:
+                        raise exceptions.CommandError(self.str.get('cmd-play-spotify-unsupported', 'That is not a supported Spotify URI. Please right click the item in Spotify, select `Share`, then select `Copy Spotify URI`. Paste that info after the play command.'), expire_in=30)
+
+                except exceptions.SpotifyError:
+                    raise exceptions.CommandError(self.str.get('cmd-play-spotify-invalid', 'You either provided an invalid URI or an unknown problem occurred. Please make sure to right click the item in Spotify, select `Share`, then select `Copy Spotify URI`.'))
+            else:
+                raise exceptions.CommandError(self.str.get('cmd-play-spotify-unavailable', 'I am not configured to support Spotify URIs at the moment.'))
+
+        async with self.aiolocks[_func_() + ':' + author.id]:
+            if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
+                raise exceptions.PermissionsError(
+                    self.str.get('cmd-play-limit', "You have reached your enqueued song limit ({0}).").format(permissions.max_songs), expire_in=30
                 )
 
-            if not all(info.get('entries', [])):
-                # empty list, no data
-                return
-
-            song_url = info['entries'][0]['webpage_url']
-            info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
-            # Now I could just do: return await self.cmd_play(player, channel, author, song_url)
-            # But this is probably fine
-
-        # TODO: Possibly add another check here to see about things like the bandcamp issue
-        # TODO: Where ytdl gets the generic extractor version with no processing, but finds two different urls
-
-        if 'entries' in info:
-            raise exceptions.CommandError("I cannot 'playnext' playlists. You must specify a single song.", expire_in=30)
-        else:
-            if permissions.max_song_length and info.get('duration', 0) > permissions.max_song_length:
+            if player.karaoke_mode and not permissions.bypass_karaoke_mode:
                 raise exceptions.PermissionsError(
-                    "Song duration exceeds limit (%s > %s). Please request a song under ten minutes in length." % (info['duration'], permissions.max_song_length),
-                    expire_in=30
+                    self.str.get('karaoke-enabled', "Karaoke mode is enabled. Please try again when it's disabled."), expire_in=30
                 )
 
             try:
-                entry, position = await player.playlist.add_entry(song_url, channel=channel, author=author)
-                await entry.get_ready_future()
-#                await self.safe_send_message(channel, "Enqueued **%s** to be played. Position in queue: Up next!" % entry.title, expire_in=20)
-                # Get the song ready now, otherwise race condition where finished-playing will fire before
-                # the song is finished downloading, which will then cause another song from autoplaylist to
-                # be added to the queue
+                info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
+            except Exception as e:
+                if 'unknown url type' in str(e):
+                    song_url = song_url.replace(':', '')  # it's probably not actually an extractor
+                    info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
+                else:
+                    raise exceptions.CommandError(e, expire_in=30)
 
-            except exceptions.WrongEntryTypeError as e:
-                if e.use_url == song_url:
-                    print("[Warning] Determined incorrect entry type, but suggested url is the same. Help.")
+            if not info:
+                raise exceptions.CommandError(
+                    self.str.get('cmd-play-noinfo', "That video cannot be played. Try using the {0}stream command.").format(self.config.command_prefix),
+                    expire_in=30
+                )
 
-                if self.config.debug_mode:
-                    print("[Info] Assumed url \"%s\" was a single entry, but was actually a playlist." % song_url)
-                    print("[Info] Using \"%s\" instead." % e.use_url)
+            log.debug(info)
 
-                return await self.cmd_playnow(player, channel, author, permissions, leftover_args, e.use_url)
+            if info.get('extractor', '') not in permissions.extractors and permissions.extractors:
+                raise exceptions.PermissionsError(
+                    self.str.get('cmd-play-badextractor', "You do not have permission to play media from this service."), expire_in=30
+                )
+
+            # abstract the search handling away from the user
+            # our ytdl options allow us to use search strings as input urls
+            if info.get('url', '').startswith('ytsearch'):
+                # print("[Command:play] Searching for \"%s\"" % song_url)
+                info = await self.downloader.extract_info(
+                    player.playlist.loop,
+                    song_url,
+                    download=False,
+                    process=True,    # ASYNC LAMBDAS WHEN
+                    on_error=lambda e: asyncio.ensure_future(
+                        self.safe_send_message(channel, "```\n%s\n```" % e, expire_in=120), loop=self.loop),
+                    retry_on_error=True
+                )
+
+                if not info:
+                    raise exceptions.CommandError(
+                        self.str.get('cmd-play-nodata', "Error extracting info from search string, youtubedl returned no data. "
+                                                        "You may need to restart the bot if this continues to happen."), expire_in=30
+                    )
+
+                if not all(info.get('entries', [])):
+                    # empty list, no data
+                    log.debug("Got empty list, no data")
+                    return
+
+                # TODO: handle 'webpage_url' being 'ytsearch:...' or extractor type
+                song_url = info['entries'][0]['webpage_url']
+                info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
+                # Now I could just do: return await self.cmd_play(player, channel, author, song_url)
+                # But this is probably fine
+
+            # TODO: Possibly add another check here to see about things like the bandcamp issue
+            # TODO: Where ytdl gets the generic extractor version with no processing, but finds two different urls
+
+#            entry_list, position = await player.playlist.import_from(song_url, channel=channel, author=author)
+            
+            if 'entries' in info:
+                raise exceptions.CommandError(self.str.get('cmd-playnext-playlist', "Sorry, but you cannot playnext playlists. Please add the playlist to the queue using {0}play.").format(self.config.command_prefix), expire_in=30)
+            else:
+                if permissions.max_song_length and info.get('duration', 0) > permissions.max_song_length:
+                    raise exceptions.PermissionsError(
+                        "Song duration exceeds limit (%s > %s). Please request a song under ten minutes in length." % (info['duration'], permissions.max_song_length),
+                        expire_in=30
+                    )
+                try:
+                    entry, position = await player.playlist.add_entry(song_url, channel=channel, author=author)
+                    await entry.get_ready_future()
+#                    await self.safe_send_message(channel, "Enqueued **%s** to be played. Position in queue: Up next!" % entry.title, expire_in=20)
+                    # Get the song ready now, otherwise race condition where finished-playing will fire before
+                    # the song is finished downloading, which will then cause another song from autoplaylist to
+                    # be added to the queue
+
+                except exceptions.WrongEntryTypeError as e:
+                    if e.use_url == song_url:
+                        print("[Warning] Determined incorrect entry type, but suggested url is the same. Help.")
+
+                    if self.config.debug_mode:
+                        print("[Info] Assumed url \"%s\" was a single entry, but was actually a playlist." % song_url)
+                        print("[Info] Using \"%s\" instead." % e.use_url)
+
+                    return await self.cmd_playnext(player, channel, author, permissions, leftover_args, e.use_url)            
 
             if position > 1:
                 player.playlist.promote_last()
-                return Response("Enqueued **{0}** to be played. Position in queue: **Up next.**".format(entry.title), delete_after=30)
+            return Response("Enqueued **{0}** to be played. Position in queue: **Up next.**".format(entry.title), delete_after=30)
 
     async def cmd_roll(self, channel, author, leftover_args):
         """
@@ -2995,11 +3116,16 @@ class MusicBot(discord.Client):
 
 
     async def cmd_disconnect(self, server):
+        """
+        Usage:
+            {command_prefix}disconnect
+        Tells the bot to disconnect from the server channel.
+        """    
         await self.disconnect_voice_client(server)
         return Response("Disconnecting from `{0.name}`.".format(server), delete_after=20)
 
     async def cmd_restart(self, channel):
-        await self.safe_send_message(channel, "I am now restarting ... if this action is because of a bug, please report it to @Jimgersnap#1357.")
+        await self.safe_send_message(channel, "Restarting ...")
 
         player = self.get_player_in(channel.server)
         if player and player.is_paused:
