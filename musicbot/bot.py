@@ -1272,7 +1272,7 @@ class MusicBot(discord.Client):
 
     async def cmd_botinfo(self, message):
         """Returns general information about DJ Roomba."""
-        return Response("DJ Roomba is a forked version of MusicBot for Discord with additional features and a cleaner chat presence. DJ Roomba is on version `1.2.5` and is running on top of MusicBot version `1.9.7`.\n\n DJ Roomba GitHub Repo: `https://github.com/ItsFleck/DJ-Roomba`\n MusicBot GitHub Repo: `https://github.com/Just-Some-Bots/MusicBot`", delete_after=60)
+        return Response("DJ Roomba is a forked version of MusicBot for Discord with additional features and a cleaner chat presence. DJ Roomba is on version `1.2.6` and is running on top of MusicBot version `1.9.7`.\n\n DJ Roomba GitHub Repo: `https://github.com/ItsFleck/DJ-Roomba`\n MusicBot GitHub Repo: `https://github.com/Just-Some-Bots/MusicBot`", delete_after=60)
 
     async def cmd_blacklist(self, message, user_mentions, option, something):
         """
