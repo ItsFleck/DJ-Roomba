@@ -93,7 +93,7 @@ class MusicPlayerState(Enum):
 
     def __str__(self):
         return self.name
-		
+
 class MusicPlayerRepeatState(Enum):
     NONE = 0    # Playlist plays as normal
     ALL = 1     # Entire playlist repeats
@@ -124,7 +124,6 @@ class MusicPlayer(EventEmitter, Serializable):
 
         self.playlist.on('entry-added', self.on_entry_added)
         self.playlist.on('entry-removed', self.on_entry_removed)
-        self.loop.create_task(self.websocket_check())
 
     @property
     def volume(self):
@@ -141,12 +140,12 @@ class MusicPlayer(EventEmitter, Serializable):
             self.loop.call_later(2, self.play)
 
         self.emit('entry-added', player=self, playlist=playlist, entry=entry)
-		
+
     def on_entry_removed(self, playlist, entry):
         if not self.bot.config.save_videos and entry:
             if any([entry.filename == e.filename for e in self.playlist.entries]):
                 print("[Config:SaveVideos] Skipping deletion, found song in queue")
-            elif entry.filename == self._current_entry.filename:                
+            elif entry.filename == self._current_entry.filename:
                 print("[Config:SaveVideos] Skipping deletion, song removed from queue is currently playing")
             else:
                 # print("[Config:SaveVideos] Deleting file: %s" % os.path.relpath(entry.filename))
@@ -191,7 +190,7 @@ class MusicPlayer(EventEmitter, Serializable):
             return
 
         raise ValueError('Cannot pause a MusicPlayer in state %s' % self.state)
-		
+
     def repeat(self):
         if self.is_repeatNone:
             self.repeatState = MusicPlayerRepeatState.ALL
@@ -211,10 +210,10 @@ class MusicPlayer(EventEmitter, Serializable):
 
     def _playback_finished(self):
         entry = self._current_entry
-		
+
         if self.is_repeatAll or (self.is_repeatSingle and not self.skipRepeat):
             self.playlist._add_entry(entry)
-            if self.is_repeatSingle:            
+            if self.is_repeatSingle:
                 self.playlist.promote_last()
         self.skipRepeat = False
 
@@ -308,10 +307,10 @@ class MusicPlayer(EventEmitter, Serializable):
                 boptions = "-nostdin"
                 # aoptions = "-vn -b:a 192k"
                 if isinstance(entry, StreamPlaylistEntry):
-                   aoptions = entry.aoptions    
+                   aoptions = entry.aoptions
                 else:
                     aoptions = "-vn"
-                
+
                 log.ffmpeg("Creating player with options: {} {} {}".format(boptions, aoptions, entry.filename))
 
                 self._current_player = self._monkeypatch_player(self.voice_client.create_ffmpeg_player(
@@ -345,36 +344,6 @@ class MusicPlayer(EventEmitter, Serializable):
         original_buff = player.buff
         player.buff = PatchedBuff(original_buff)
         return player
-
-    async def reload_voice(self, voice_client):
-        async with self.bot.aiolocks[_func_() + ':' + voice_client.channel.server.id]:
-            self.voice_client = voice_client
-            if self._current_player:
-                self._current_player.player = voice_client.play_audio
-                self._current_player._resumed.clear()
-                self._current_player._connected.set()
-
-    async def websocket_check(self):
-        log.voicedebug("Starting websocket check loop for {}".format(self.voice_client.channel.server))
-
-        while not self.is_dead:
-            try:
-                async with self.bot.aiolocks[self.reload_voice.__name__ + ':' + self.voice_client.channel.server.id]:
-                    await self.voice_client.ws.ensure_open()
-
-            except InvalidState:
-                log.debug("Voice websocket for \"{}\" is {}, reconnecting".format(
-                    self.voice_client.channel.server,
-                    self.voice_client.ws.state_name
-                ))
-                await self.bot.reconnect_voice_client(self.voice_client.channel.server, channel=self.voice_client.channel)
-                await asyncio.sleep(3)
-
-            except Exception:
-                log.error("Error in websocket check loop", exc_info=True)
-
-            finally:
-                await asyncio.sleep(1)
 
     def __json__(self):
         return self._enclose_json({
@@ -435,7 +404,7 @@ class MusicPlayer(EventEmitter, Serializable):
     @property
     def is_dead(self):
         return self.state == MusicPlayerState.DEAD
-		
+
     @property
     def is_repeatNone(self):
         return self.repeatState == MusicPlayerRepeatState.NONE

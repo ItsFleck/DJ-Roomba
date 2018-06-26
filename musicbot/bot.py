@@ -484,54 +484,6 @@ class MusicBot(discord.Client):
 
             return vc
 
-    async def reconnect_voice_client(self, server, *, sleep=0.1, channel=None):
-        log.debug("Reconnecting voice client on \"{}\"{}".format(
-            server, ' to "{}"'.format(channel.name) if channel else ''))
-
-        async with self.aiolocks[_func_() + ':' + server.id]:
-            vc = self.voice_client_in(server)
-
-            if not (vc or channel):
-                return
-
-            _paused = False
-            player = self.get_player_in(server)
-
-            if player and player.is_playing:
-                log.voicedebug("(%s) Pausing", _func_())
-
-                player.pause()
-                _paused = True
-
-            log.voicedebug("(%s) Disconnecting", _func_())
-
-            try:
-                await vc.disconnect()
-            except:
-                pass
-
-            if sleep:
-                log.voicedebug("(%s) Sleeping for %s", _func_(), sleep)
-                await asyncio.sleep(sleep)
-
-            if player:
-                log.voicedebug("(%s) Getting voice client", _func_())
-
-                if not channel:
-                    new_vc = await self.get_voice_client(vc.channel)
-                else:
-                    new_vc = await self.get_voice_client(channel)
-
-                log.voicedebug("(%s) Swapping voice client", _func_())
-                await player.reload_voice(new_vc)
-
-                if player.is_paused and _paused:
-                    log.voicedebug("Resuming")
-                    player.resume()
-
-        log.debug("Reconnected voice client on \"{}\"{}".format(
-            server, ' to "{}"'.format(channel.name) if channel else ''))
-
     async def disconnect_voice_client(self, server):
         vc = self.voice_client_in(server)
         if not vc:
@@ -584,11 +536,6 @@ class MusicBot(discord.Client):
                 playlist = Playlist(self)
                 player = MusicPlayer(self, voice_client, playlist)
                 self._init_player(player, server=server)
-
-            async with self.aiolocks[self.reconnect_voice_client.__name__ + ':' + server.id]:
-                if self.players[server.id].voice_client not in self.voice_clients:
-                    log.debug("Reconnect required for voice client in {}".format(server.name))
-                    await self.reconnect_voice_client(server, channel=channel)
 
         return self.players[server.id]
 
@@ -1829,6 +1776,16 @@ class MusicBot(discord.Client):
         return Response(self.str.get('cmd-play-playlist-end-proc', "I have finished processing your playlist with **{0}** songs and have added them to the queue. Type `{1}shuffle` to shuffle the queue.").format(
             songs_added, self.config.command_prefix), delete_after=30)
 
+    async def cmd_cancel(self, player):
+        """
+        Usage:
+            {command_prefix}cancel
+
+        Cancels the playlist process; just in case you change your mind.
+        """
+        if self.downloader.extract_info:
+            player.playlist.clear()
+
     async def cmd_stream(self, player, channel, author, permissions, song_url):
         """
         Usage:
@@ -2976,6 +2933,9 @@ class MusicBot(discord.Client):
         Clears the playlist.
         """
 
+        if player.playlist._cmd_play_playlist_async:
+            player.
+
         player.playlist.clear()
         return Response(self.str.get('cmd-clear-reply', "I have cleared the queue in `{0}`.").format(player.voice_client.channel.name), delete_after=30)
 
@@ -3921,8 +3881,6 @@ class MusicBot(discord.Client):
     async def on_server_update(self, before:discord.Server, after:discord.Server):
         if before.region != after.region:
             log.warning("Server \"%s\" changed regions: %s -> %s" % (after.name, before.region, after.region))
-
-            await self.reconnect_voice_client(after)
 
 
     async def on_server_join(self, server:discord.Server):
