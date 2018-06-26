@@ -1776,16 +1776,6 @@ class MusicBot(discord.Client):
         return Response(self.str.get('cmd-play-playlist-end-proc', "I have finished processing your playlist with **{0}** songs and have added them to the queue. Type `{1}shuffle` to shuffle the queue.").format(
             songs_added, self.config.command_prefix), delete_after=30)
 
-    async def cmd_cancel(self, player):
-        """
-        Usage:
-            {command_prefix}cancel
-
-        Cancels the playlist process; just in case you change your mind.
-        """
-        if self.downloader.extract_info:
-            player.playlist.clear()
-
     async def cmd_stream(self, player, channel, author, permissions, song_url):
         """
         Usage:
@@ -2932,9 +2922,6 @@ class MusicBot(discord.Client):
 
         Clears the playlist.
         """
-
-        if player.playlist._cmd_play_playlist_async:
-            player.
 
         player.playlist.clear()
         return Response(self.str.get('cmd-clear-reply', "I have cleared the queue in `{0}`.").format(player.voice_client.channel.name), delete_after=30)
