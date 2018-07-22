@@ -1272,7 +1272,7 @@ class MusicBot(discord.Client):
 
     async def cmd_botinfo(self, message):
         """Returns general information about DJ Roomba."""
-        return Response("DJ Roomba is a forked version of MusicBot for Discord with additional features and a cleaner chat presence. DJ Roomba is on version `1.2.7` and is running on top of MusicBot version `1.9.7`.\n\n DJ Roomba GitHub Repo: `https://github.com/ItsFleck/DJ-Roomba`\n MusicBot GitHub Repo: `https://github.com/Just-Some-Bots/MusicBot`", delete_after=60)
+        return Response("DJ Roomba is a forked version of MusicBot for Discord with additional features and a cleaner chat presence. DJ Roomba is on version `1.2.8` and is running on top of MusicBot version `1.9.7`.\n\nDJ Roomba Changelog: `http://jimgersnap.com/dj-roomba/changelog.txt`\nDJ Roomba Known Issues: `http://jimgersnap.com/dj-roomba/issues.txt`\n\nDJ Roomba GitHub Repo: `https://github.com/ItsFleck/DJ-Roomba`\nMusicBot GitHub Repo: `https://github.com/Just-Some-Bots/MusicBot`", delete_after=60)
 
     async def cmd_blacklist(self, message, user_mentions, option, something):
         """
@@ -1422,7 +1422,7 @@ class MusicBot(discord.Client):
 
         song_url = song_url.strip('<>')
 
-        await self.send_typing(channel)
+#        await self.send_typing(channel)
 
         if leftover_args:
             song_url = ' '.join([song_url, *leftover_args])
@@ -1479,9 +1479,9 @@ class MusicBot(discord.Client):
                         raise exceptions.CommandError(self.str.get('cmd-play-spotify-unsupported', 'That is not a supported Spotify URI. Please right click the item in Spotify, select `Share`, then select `Copy Spotify URI`. Paste that info after the play command.'), expire_in=30)
 
                 except exceptions.SpotifyError:
-                    raise exceptions.CommandError(self.str.get('cmd-play-spotify-invalid', 'You either provided an invalid URI or an unknown problem occurred. Please make sure to right click the item in Spotify, select `Share`, then select `Copy Spotify URI`.'))
+                    raise exceptions.CommandError(self.str.get('cmd-play-spotify-invalid', 'You either provided an invalid URI or an unknown problem occurred. Please make sure to right click the item in Spotify, select `Share`, then select `Copy Spotify URI`.'), expire_in=30)
             else:
-                raise exceptions.CommandError(self.str.get('cmd-play-spotify-unavailable', 'I am not configured to support Spotify URIs at the moment.'))
+                raise exceptions.CommandError(self.str.get('cmd-play-spotify-unavailable', 'I am not configured to support Spotify URIs at the moment.'), expire_in=30)
 
         async with self.aiolocks[_func_() + ':' + author.id]:
             if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
@@ -2060,44 +2060,6 @@ class MusicBot(discord.Client):
         reply_text %= (btext, time_until)
 
         return Response(reply_text, delete_after=30)
-
-#    async def cmd_remove(self, player, position=None):
-#        """
-#        Usage:
-#            {command_prefix}remove
-#            {command_prefix}remove [song position]
-#        Removes the next song from the queue.
-#        If you specify a position, it removes the song at that position from the queue.
-#        """
-#
-#        if player.is_stopped:
-#            raise exceptions.CommandError("I can't modify the queue because there is nothing in the queue.", expire_in=20)
-#
-#        length = len(player.playlist.entries)
-#
-#        if length < 1:
-#            raise exceptions.CommandError("There aren't enough songs in the queue for me to remove that track ID.", expire_in=20)
-#
-#        if not position:
-#            entry = player.playlist.remove_first()
-#        else:
-#            try:
-#                position = int(position)
-#            except ValueError:
-#                raise exceptions.CommandError("This is not a valid song number. Please choose a song \
-#                    number between 1 and %s!" % length, expire_in=20)
-#
-#            if position == 1:
-#                entry = player.playlist.remove_first()
-#            elif position < 1 or position > length:
-#                raise exceptions.CommandError("I can't remove a song that is not in the queue. Please choose a song \
-#                    number between 1 and %s!" % length, expire_in=20)
-#            else:
-#                entry = player.playlist.remove_position(position)
-#
-#        reply_text = ":x: Removed **%s** from the queue." % entry.title
-#
-#        return Response(reply_text, delete_after=30)
 #
     async def cmd_playnow(self, message, player, channel, author, permissions, leftover_args, song_url):
         """
@@ -2405,300 +2367,74 @@ class MusicBot(discord.Client):
                 player.playlist.promote_last()
             return Response("Enqueued **{0}** to be played. Position in queue: **Up next.**".format(entry.title), delete_after=30)
 
-    async def cmd_90s(self, player, channel, author, permissions, leftover_args):
+    async def cmd_90s(self, message, player, channel, author, permissions, leftover_args):
         """
-        Usage:
-            Plays a 90s Alternative & Grunge playlist.
+            Plays a 90s alternative & grunge playlist.
+
             Playlist created by Jimgersnap#1357.
         """
 
         song_url = "https://www.youtube.com/playlist?list=PLua_w_vHX8S0V1xXrP9GfCnRwxNrvJV4-"
 
-        if leftover_args:
-            song_url = ' '.join([song_url, *leftover_args])
-        leftover_args = None
+        await self.cmd_play(message, player, channel, author, permissions, leftover_args, song_url)
+        player.playlist.shuffle()
 
-        async with self.aiolocks[_func_() + ':' + author.id]:
-            if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
-                raise exceptions.PermissionsError(
-                    self.str.get('cmd-play-limit', "You have reached your enqueued song limit ({0}).").format(permissions.max_songs), expire_in=30
-                )
+        return Response("The **90s Alternative & Grunge** playlist has been added to the queue and has automatically been shuffled.", delete_after=30)
 
-            if player.karaoke_mode and not permissions.bypass_karaoke_mode:
-                raise exceptions.PermissionsError(
-                    self.str.get('karaoke-enabled', "Karaoke mode is enabled. Please try again when it's disabled."), expire_in=30
-                )
-
-            try:
-                info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
-            except Exception as e:
-                if 'unknown url type' in str(e):
-                    song_url = song_url.replace(':', '')
-                    info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
-                else:
-                    raise exceptions.CommandError(e, expire_in=30)
-
-            log.debug(info)
-
-            if info.get('extractor', '') not in permissions.extractors and permissions.extractors:
-                raise exceptions.PermissionsError(
-                    self.str.get('cmd-play-badextractor', "You do not have permission to play media from this service."), expire_in=30
-                )
-
-                if not all(info.get('entries', [])):
-                    log.debug("Got empty list, no data")
-                    return
-
-                song_url = info['entries'][0]['webpage_url']
-                info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
-
-            if 'entries' in info:
-                await self._do_playlist_checks(permissions, player, author, info['entries'])
-
-                num_songs = sum(1 for _ in info['entries'])
-
-                if info['extractor'].lower() in ['youtube:playlist', 'soundcloud:set', 'bandcamp:album']:
-                    try:
-                        return await self._cmd_play_playlist_async(player, channel, author, permissions, song_url, info['extractor'])
-                    except exceptions.CommandError:
-                        raise
-                    except Exception as e:
-                        log.error("Error queuing playlist", exc_info=True)
-                        raise exceptions.CommandError(self.str.get('cmd-play-playlist-error', "Error queuing playlist:\n`{0}`").format(e), expire_in=30)
-
-                t0 = time.time()
-                wait_per_song = 1.2
-
-                procmesg = await self.safe_send_message(
-                    channel,
-                    self.str.get('cmd-play-playlist-gathering-1', 'Gathering playlist information for {0} songs{1} ...').format(
-                        num_songs,
-                        self.str.get('cmd-play-playlist-gathering-2', ', ETA: {0} seconds').format(fixg(
-                            num_songs * wait_per_song)) if num_songs >= 10 else '.'))
-
-#                await self.send_typing(channel)
-
-                entry_list, position = await player.playlist.import_from(song_url, channel=channel, author=author)
-
-                tnow = time.time()
-                ttime = tnow - t0
-                listlen = len(entry_list)
-                drop_count = 0
-
-                if permissions.max_song_length:
-                    for e in entry_list.copy():
-                        if e.duration > permissions.max_song_length:
-                            player.playlist.entries.remove(e)
-                            entry_list.remove(e)
-                            drop_count += 1
-                    if drop_count:
-                        print("Dropped %s songs" % drop_count)
-
-                log.info("Processed {} songs in {} seconds at {:.2f}s/song, {:+.2g}/song from expected ({}s)".format(
-                    listlen,
-                    fixg(ttime),
-                    ttime / listlen if listlen else 0,
-                    ttime / listlen - wait_per_song if listlen - wait_per_song else 0,
-                    fixg(wait_per_song * num_songs))
-                )
-
-        return
-
-    async def cmd_classicrock(self, player, channel, author, permissions, leftover_args):
+    async def cmd_classicrock(self, message, player, channel, author, permissions, leftover_args):
         """
-        Usage:
             Plays a classic rock playlist with rock songs from the 60s, 70s, and 80s.
+
             Playlist created by Jimgersnap#1357.
         """
 
         song_url = "https://www.youtube.com/playlist?list=PLua_w_vHX8S1FdzkWQ6DS3L_XCmprFPhR"
 
-        if leftover_args:
-            song_url = ' '.join([song_url, *leftover_args])
-        leftover_args = None
+        await self.cmd_play(message, player, channel, author, permissions, leftover_args, song_url)
+        player.playlist.shuffle()
 
-        async with self.aiolocks[_func_() + ':' + author.id]:
-            if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
-                raise exceptions.PermissionsError(
-                    self.str.get('cmd-play-limit', "You have reached your enqueued song limit ({0}).").format(permissions.max_songs), expire_in=30
-                )
+        return Response("The **Classic Rock** playlist has been added to the queue and has automatically been shuffled.", delete_after=30)
 
-            if player.karaoke_mode and not permissions.bypass_karaoke_mode:
-                raise exceptions.PermissionsError(
-                    self.str.get('karaoke-enabled', "Karaoke mode is enabled. Please try again when it's disabled."), expire_in=30
-                )
-
-            try:
-                info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
-            except Exception as e:
-                if 'unknown url type' in str(e):
-                    song_url = song_url.replace(':', '')
-                    info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
-                else:
-                    raise exceptions.CommandError(e, expire_in=30)
-
-            log.debug(info)
-
-            if info.get('extractor', '') not in permissions.extractors and permissions.extractors:
-                raise exceptions.PermissionsError(
-                    self.str.get('cmd-play-badextractor', "You do not have permission to play media from this service."), expire_in=30
-                )
-
-                if not all(info.get('entries', [])):
-                    log.debug("Got empty list, no data")
-                    return
-
-                song_url = info['entries'][0]['webpage_url']
-                info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
-
-            if 'entries' in info:
-                await self._do_playlist_checks(permissions, player, author, info['entries'])
-
-                num_songs = sum(1 for _ in info['entries'])
-
-                if info['extractor'].lower() in ['youtube:playlist', 'soundcloud:set', 'bandcamp:album']:
-                    try:
-                        return await self._cmd_play_playlist_async(player, channel, author, permissions, song_url, info['extractor'])
-                    except exceptions.CommandError:
-                        raise
-                    except Exception as e:
-                        log.error("Error queuing playlist", exc_info=True)
-                        raise exceptions.CommandError(self.str.get('cmd-play-playlist-error', "Error queuing playlist:\n`{0}`").format(e), expire_in=30)
-
-                t0 = time.time()
-                wait_per_song = 1.2
-
-                procmesg = await self.safe_send_message(
-                    channel,
-                    self.str.get('cmd-play-playlist-gathering-1', 'Gathering playlist information for {0} songs{1} ...').format(
-                        num_songs,
-                        self.str.get('cmd-play-playlist-gathering-2', ', ETA: {0} seconds').format(fixg(
-                            num_songs * wait_per_song)) if num_songs >= 10 else '.'))
-
-#                await self.send_typing(channel)
-
-                entry_list, position = await player.playlist.import_from(song_url, channel=channel, author=author)
-
-                tnow = time.time()
-                ttime = tnow - t0
-                listlen = len(entry_list)
-                drop_count = 0
-
-                if permissions.max_song_length:
-                    for e in entry_list.copy():
-                        if e.duration > permissions.max_song_length:
-                            player.playlist.entries.remove(e)
-                            entry_list.remove(e)
-                            drop_count += 1
-                    if drop_count:
-                        print("Dropped %s songs" % drop_count)
-
-                log.info("Processed {} songs in {} seconds at {:.2f}s/song, {:+.2g}/song from expected ({}s)".format(
-                    listlen,
-                    fixg(ttime),
-                    ttime / listlen if listlen else 0,
-                    ttime / listlen - wait_per_song if listlen - wait_per_song else 0,
-                    fixg(wait_per_song * num_songs))
-                )
-
-        return
-
-    async def cmd_classicrockselects(self, player, channel, author, permissions, leftover_args):
+    async def cmd_classicrockselects(self, message, player, channel, author, permissions, leftover_args):
         """
-        Usage:
             Plays a classic rock playlist with specifically selected songs from the 60s, 70s, and 80s.
+
             Playlist created by Jimgersnap#1357.
         """
 
         song_url = "https://www.youtube.com/playlist?list=PLua_w_vHX8S2e1ueZ-8dQQJnWXJkC5CSk"
 
-        if leftover_args:
-            song_url = ' '.join([song_url, *leftover_args])
-        leftover_args = None
+        await self.cmd_play(message, player, channel, author, permissions, leftover_args, song_url)
+        player.playlist.shuffle()
 
-        async with self.aiolocks[_func_() + ':' + author.id]:
-            if permissions.max_songs and player.playlist.count_for_user(author) >= permissions.max_songs:
-                raise exceptions.PermissionsError(
-                    self.str.get('cmd-play-limit', "You have reached your enqueued song limit ({0}).").format(permissions.max_songs), expire_in=30
-                )
+        return Response("The **Classic Rock Selects** playlist has been added to the queue and has automatically been shuffled.", delete_after=30)
 
-            if player.karaoke_mode and not permissions.bypass_karaoke_mode:
-                raise exceptions.PermissionsError(
-                    self.str.get('karaoke-enabled', "Karaoke mode is enabled. Please try again when it's disabled."), expire_in=30
-                )
+    async def cmd_90s00s(self, message, player, channel, author, permissions, leftover_args):
+        """
+            Plays a playlist with a mix of 90s and 00s alternative rock.
 
-            try:
-                info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
-            except Exception as e:
-                if 'unknown url type' in str(e):
-                    song_url = song_url.replace(':', '')
-                    info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
-                else:
-                    raise exceptions.CommandError(e, expire_in=30)
+            Playlist created by rachael#6969.
+        """
 
-            log.debug(info)
+        song_url = "spotify:user:128272940:playlist:4JHY3MvFZpkMHKiXYkOJOu"
 
-            if info.get('extractor', '') not in permissions.extractors and permissions.extractors:
-                raise exceptions.PermissionsError(
-                    self.str.get('cmd-play-badextractor', "You do not have permission to play media from this service."), expire_in=30
-                )
-
-                if not all(info.get('entries', [])):
-                    log.debug("Got empty list, no data")
-                    return
-
-                song_url = info['entries'][0]['webpage_url']
-                info = await self.downloader.extract_info(player.playlist.loop, song_url, download=False, process=False)
-
-            if 'entries' in info:
-                await self._do_playlist_checks(permissions, player, author, info['entries'])
-
-                num_songs = sum(1 for _ in info['entries'])
-
-                if info['extractor'].lower() in ['youtube:playlist', 'soundcloud:set', 'bandcamp:album']:
-                    try:
-                        return await self._cmd_play_playlist_async(player, channel, author, permissions, song_url, info['extractor'])
-                    except exceptions.CommandError:
-                        raise
-                    except Exception as e:
-                        log.error("Error queuing playlist", exc_info=True)
-                        raise exceptions.CommandError(self.str.get('cmd-play-playlist-error', "Error queuing playlist:\n`{0}`").format(e), expire_in=30)
-
-                t0 = time.time()
-                wait_per_song = 1.2
-
-                procmesg = await self.safe_send_message(
-                    channel,
-                    self.str.get('cmd-play-playlist-gathering-1', 'Gathering playlist information for {0} songs{1} ...').format(
-                        num_songs,
-                        self.str.get('cmd-play-playlist-gathering-2', ', ETA: {0} seconds').format(fixg(
-                            num_songs * wait_per_song)) if num_songs >= 10 else '.'))
-
-#                await self.send_typing(channel)
-
-                entry_list, position = await player.playlist.import_from(song_url, channel=channel, author=author)
-
-                tnow = time.time()
-                ttime = tnow - t0
-                listlen = len(entry_list)
-                drop_count = 0
-
-                if permissions.max_song_length:
-                    for e in entry_list.copy():
-                        if e.duration > permissions.max_song_length:
-                            player.playlist.entries.remove(e)
-                            entry_list.remove(e)
-                            drop_count += 1
-                    if drop_count:
-                        print("Dropped %s songs" % drop_count)
-
-                log.info("Processed {} songs in {} seconds at {:.2f}s/song, {:+.2g}/song from expected ({}s)".format(
-                    listlen,
-                    fixg(ttime),
-                    ttime / listlen if listlen else 0,
-                    ttime / listlen - wait_per_song if listlen - wait_per_song else 0,
-                    fixg(wait_per_song * num_songs))
-                )
+        if song_url.startswith('spotify:') and self.config._spotify:  # treat it as probably a spotify URI
+            song_url = song_url.split(":", 1)[1]
+            if song_url.startswith('user:') and 'playlist:' in song_url:
+                user = song_url.split(":",)[1]
+                song_url = song_url.split(":", 3)[3]
+                res = await self.spotify.get_playlist(user, song_url)
+                await self._do_playlist_checks(permissions, player, author, res['tracks']['items'])
+                procmesg = await self.safe_send_message(channel, "Processing Spotify playlist **{0}**. This playlist will be shuffled automatically when processing is complete.".format(res['name']))
+                for i in res['tracks']['items']:
+                    song_url = i['track']['name'] + ' ' + i['track']['artists'][0]['name']
+                    log.debug('Processing {0}'.format(song_url))
+                    await self.cmd_play(message, player, channel, author, permissions, leftover_args, song_url)
+                await self.safe_delete_message(procmesg)
+                player.playlist.shuffle()
+                return Response("I have finished processing the Spotify playlist **{0}** with **{1}** songs added to the queue. The queue has been automatically shuffled.".format(res['name'], len(res['tracks']['items'])), delete_after=30)
+        else:
+            raise exceptions.CommandError(self.str.get('cmd-play-spotify-unavailable', 'I am not configured to support Spotify URIs at the moment.'), expire_in=30)
 
         return
 
