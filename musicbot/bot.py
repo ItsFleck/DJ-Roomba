@@ -1272,7 +1272,7 @@ class MusicBot(discord.Client):
 
     async def cmd_botinfo(self, message):
         """Returns general information about DJ Roomba."""
-        return Response("DJ Roomba is a forked version of MusicBot for Discord with additional features and a cleaner chat presence. DJ Roomba is on version `1.2.6` and is running on top of MusicBot version `1.9.7`.\n\n DJ Roomba GitHub Repo: `https://github.com/ItsFleck/DJ-Roomba`\n MusicBot GitHub Repo: `https://github.com/Just-Some-Bots/MusicBot`", delete_after=60)
+        return Response("DJ Roomba is a forked version of MusicBot for Discord with additional features and a cleaner chat presence. DJ Roomba is on version `1.2.7` and is running on top of MusicBot version `1.9.7`.\n\n DJ Roomba GitHub Repo: `https://github.com/ItsFleck/DJ-Roomba`\n MusicBot GitHub Repo: `https://github.com/Just-Some-Bots/MusicBot`", delete_after=60)
 
     async def cmd_blacklist(self, message, user_mentions, option, something):
         """
@@ -3455,7 +3455,7 @@ class MusicBot(discord.Client):
         await self.disconnect_voice_client(server)
         return Response("Disconnecting from `{0.name}`.".format(server), delete_after=20)
 
-    async def cmd_refresh(self, channel, server, author, voice_channel):
+    async def cmd_refresh(self, server, author, voice_channel):
         """
         Usage:
             {command_prefix}refresh
@@ -3463,9 +3463,26 @@ class MusicBot(discord.Client):
         This is useful to fix any common Discord connection issues (i.e: Not being able to hear audio after a while).
         """
         if not author.voice_channel:
-            raise exceptions.CommandError("You need to be in a voice channel to refresh my connection.")
+            raise exceptions.CommandError("You need to be in a voice channel to refresh my connection.", delete_after=20)
 
-        await self.reconnect_voice_client(server)
+        if self.is_voice_connected(server):
+            await self.disconnect_voice_client(server)
+        else:
+            raise exceptions.CommandError("I need to be connected to the server to be refreshed.", delete_after=20)
+
+        time.sleep(0.3) #Mostly because without this it reconnects so fast the disconnect and connect Discord sounds overlap, otherwise it's unnecessary
+
+        await self.join_voice_channel(author.voice_channel)
+
+        player = await self.get_player(author.voice_channel, create=True, deserialize=self.config.persistent_queue)
+        if player.is_stopped:
+            player.play()
+
+        if self.config.auto_playlist:
+            await self.on_player_finished_playing(player)
+
+        log.info("Refresh command used. Reconnected to {0.server.name} in {0.name}".format(author.voice_channel))
+
         return Response("My connection to the Discord server has been refreshed.", delete_after=20)
 
     async def cmd_restart(self, channel):
