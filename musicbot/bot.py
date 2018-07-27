@@ -1422,7 +1422,7 @@ class MusicBot(discord.Client):
 
         song_url = song_url.strip('<>')
 
-#        await self.send_typing(channel)
+        await self.send_typing(channel)
 
         if leftover_args:
             song_url = ' '.join([song_url, *leftover_args])
